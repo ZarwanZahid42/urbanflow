@@ -1,5 +1,7 @@
 # UrbanFlow Implementation Roadmap
 
+**Current phase status (2026-08-22):** Phase 2 real-data acquisition is implemented locally with configurable official TLC monthly Parquet acquisition, the TLC taxi-zone CSV, optional paginated NOAA CDO v2 acquisition, JSON Lines auditing, mocked network tests, and a validated May 2026 Yellow Taxi development slice. A NOAA token remains a manual prerequisite for live weather acquisition. Phase 3 cloud work has not started.
+
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
 ## 1. Project foundation

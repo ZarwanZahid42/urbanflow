@@ -90,3 +90,13 @@ NYC trip records are large, time-varying, and not directly suited to consistent 
 - Power BI answers the defined mobility and weather use cases.
 - CI validates code, tests, and configuration before integration.
 - The final repository accurately documents the implemented system and does not claim unbuilt features.
+
+## Phase 2 acquisition scope
+
+The implemented local acquisition layer uses three real-data categories:
+
+- one configurable monthly Yellow Taxi Parquet file from the [official NYC TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page);
+- the official TLC Taxi Zone Lookup Table in CSV format; and
+- optional daily weather observations from the [NOAA/NCEI Climate Data Online API v2](https://www.ncei.noaa.gov/cdo-web/webservices/v2).
+
+The development default is May 2026, the latest Yellow Taxi month listed when Phase 2 was implemented. Month and taxi type remain configuration-driven to support later incremental ingestion. NOAA live acquisition requires a manually obtained API token; without one, weather is explicitly skipped. Phase 2 stores local Bronze-oriented source files and JSON Lines audit events only. It does not implement cloud landing, Medallion transformations, orchestration, warehouse loading, or analytics.

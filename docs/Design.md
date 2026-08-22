@@ -104,3 +104,21 @@ Operational monitoring will combine ADF run state, Databricks job results, Delta
 ## Error handling
 
 Configuration and contract failures will stop before writes. Transient network or service failures may retry with exponential backoff and a fixed limit. Data errors will be quarantined when partial acceptance is explicitly allowed; systemic schema or quality failures will block promotion. Writes will use atomic or transactional patterns, failed batches will retain diagnostics, and reruns will use idempotent batch semantics.
+
+## Implemented Phase 2 acquisition design
+
+The local package under `src/ingestion/` now establishes the concrete source boundary:
+
+- `config.py` loads TLC, NOAA, and local path settings from environment variables and `.env` without embedding credentials.
+- `tlc_client.py` constructs official monthly TLC URLs and streams trip/reference downloads in bounded chunks.
+- `weather_client.py` constructs NOAA CDO v2 data requests, sends the token only in the `token` header, follows result metadata with `limit=1000` and increasing offsets, and persists one combined raw JSON document.
+- `ingestion_audit.py` appends one JSON Lines record per attempted, completed, failed, or skipped operation.
+- `run_ingestion.py` exposes `tlc`, `taxi-zones`, `weather`, and `all` source commands.
+
+The initial development contract is one `yellow_tripdata_YYYY-MM.parquet` object per invocation. The Phase 2 default is `2026-05`; `TLC_YEAR`, `TLC_MONTH`, and `TLC_TAXI_TYPE` control later bounded runs. Trip files land at `data/bronze/tlc/{type}/year=YYYY/month=MM/source.parquet`, while taxi zones use a separate reference path.
+
+Downloads use a deterministic `.part` path in the destination directory. HTTP status is validated before content is accepted; exceptions remove the temporary object, and `os.replace` publishes the final file only after a non-empty download completes. A final file causes a skip unless the caller passes `--force`.
+
+NOAA defaults to the `GHCND` daily dataset and Central Park station `GHCND:USW00094728`, with configurable dates and units. Live weather acquisition is disabled when `NOAA_API_TOKEN` is absent and no NOAA request is made. The token must be obtained manually from NOAA before enabling that source.
+
+The local audit schema contains `run_id`, source, dataset, URL, UTC start/completion timestamps, status, records or bytes, local path, and sanitized error text. Local source artifacts and audit files stay ignored by Git.

@@ -1,2 +1,3 @@
-# No third-party runtime dependencies are required for the foundation phase.
-# Add dependencies only when an implementation phase requires them.
+python-dotenv>=1.0,<2
+requests>=2.32,<3
+pytest>=8,<9

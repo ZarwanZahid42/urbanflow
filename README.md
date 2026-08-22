@@ -18,6 +18,30 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phase 1, project foundation, is initialized. The repository currently contains the planned directory structure, project configuration, and design documentation. No data pipelines, cloud resources, datasets, warehouse objects, dashboards, or external integrations have been implemented yet.
+Phase 2 implements local acquisition for real TLC Yellow Taxi trip data, the official TLC taxi-zone lookup, and optional NOAA/NCEI weather observations. The default development slice is one Yellow Taxi month: May 2026. No Azure, Databricks, Snowflake, ADF, dbt, or Power BI resources or pipelines have been implemented.
+
+## Local acquisition
+
+Official sources: [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and [NOAA/NCEI Climate Data Online API v2](https://www.ncei.noaa.gov/cdo-web/webservices/v2).
+
+From the project root, activate `.venv` and run:
+
+```powershell
+python -m src.ingestion.run_ingestion --source tlc
+python -m src.ingestion.run_ingestion --source taxi-zones
+python -m src.ingestion.run_ingestion --source weather
+python -m src.ingestion.run_ingestion --source all
+```
+
+Configure the month and source settings through environment variables listed in `.env.example`. Existing files are skipped unless `--force` is supplied. Downloads stream to `.part` files and are renamed only after success.
+
+Local raw outputs are ignored by Git:
+
+- `data/bronze/tlc/{taxi_type}/year=YYYY/month=MM/source.parquet`
+- `data/bronze/reference/taxi_zones/taxi_zone_lookup.csv`
+- `data/bronze/weather/year=YYYY/month=MM/observations.json`
+- `data/audit/ingestion_audit.jsonl`
+
+Weather ingestion is optional. Without `NOAA_API_TOKEN`, `weather` and the weather portion of `all` are recorded as skipped without making a NOAA request. Obtaining a NOAA API token is a later manual prerequisite.
 
 See [`docs/Phases.md`](docs/Phases.md) for the implementation roadmap and [`docs/Architecture.md`](docs/Architecture.md) for the intended architecture.

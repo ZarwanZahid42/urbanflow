@@ -74,3 +74,17 @@ Power BI will consume stable Snowflake models to provide mobility dashboards and
 - Audit metadata will connect source files, pipeline runs, Delta versions, and warehouse loads.
 - CI/CD will validate repository changes and later deploy environment-specific artifacts safely.
 - Storage, compute, and orchestration will be designed for bounded cost and repeatable teardown where appropriate.
+
+## Phase 2 local acquisition boundary
+
+Before Azure provisioning, the implemented local acquisition package proves access patterns against official public sources:
+
+```text
+TLC monthly Parquet ─┐
+TLC taxi-zone CSV ───┼─→ local Bronze-oriented paths + JSONL audit
+NOAA CDO API v2 ─────┘   (optional; token required)
+```
+
+TLC files are streamed to temporary files and atomically moved into place. A configured year/month produces exactly one trip-file request. Existing outputs are not downloaded again unless forced. NOAA uses its official token header and paginated `limit`/`offset` requests and combines the returned observations into one raw JSON artifact.
+
+These local paths model the future lake organization but are not ADLS Gen2, Delta Lake, or a cloud Bronze layer. ADF, Azure Databricks, Snowflake, dbt, and Power BI remain planned components.
