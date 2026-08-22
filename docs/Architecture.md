@@ -139,3 +139,23 @@ ADLS processed Bronze
 The `dbw-urbanflow` Trial workspace in Central India accesses `abfss://urbanflow@urbanflowdata2026.dfs.core.windows.net/` through Unity Catalog. Storage credential `urbanflow_adls_managed_identity` references the existing system-assigned identity on Access Connector `ac-urbanflow`; external location `urbanflow_adls_root` scopes that credential to the existing filesystem. The connector already has Storage Blob Data Contributor on the storage account. No storage key, SAS token, connection string, password, service principal, or client secret participates in this path.
 
 Ingestion adds source-file, UTC ingestion timestamp, run ID, and—on trips—source year/month metadata while preserving source columns. Delta batch replacement gives retry idempotency: one Yellow Taxi period is atomically replaced rather than appended, while the small taxi-zone snapshot is fully replaced without partitions. Data-quality findings remain observational in Bronze. Unreadable or empty input, required-schema loss, and write/count verification failures are critical ingestion failures; reported content anomalies do not remove records.
+
+## Implemented Phase 5 Silver layer
+
+```text
+Bronze Delta
+├── yellow_taxi/ ── explicit types + business rules + zone joins + deterministic hash
+└── taxi_zones/  ── normalized reference contract
+                     ↓
+Silver Delta
+├── fact_trips/              (source_year, source_month)
+├── dim_taxi_zones/          (unpartitioned)
+├── rejected/trips/          (source_year, source_month)
+├── rejected/taxi_zones/     (unpartitioned)
+├── audit/silver_pipeline/
+└── audit/silver_quality/
+```
+
+The fact keeps source lineage, Bronze run ID, a deterministic `trip_id`, Silver run metadata, and an `is_financial_adjustment` flag. Valid trips are checked against the shared Silver taxi-zone contract derived from the actual reference table; zone IDs are never hardcoded. Quarantine keeps standardized fields, all failed rules, the primary rule, a joined reason string, rejection timestamp, lineage, and an uncast Bronze JSON snapshot.
+
+May 2026 live validation on Databricks Serverless produced 4,090,836 valid trips, zero rejected trips, 265 valid zones, and zero rejected zones. The final fact and zone tables have the intended partition strategies, zero duplicate trip IDs, and zero referential-integrity failures. Serverless runs with Unity Catalog external location `urbanflow_adls_root`; no Azure resource or secret-based authentication was added.

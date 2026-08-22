@@ -18,7 +18,7 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phase 4 Databricks/PySpark Bronze processing is implemented and live-validated on Unity Catalog Serverless compute for the May 2026 Yellow Taxi file and TLC taxi-zone lookup. The notebooks preserve raw files, write idempotent Delta datasets, report Bronze quality metrics, and append structured audit records. Unity Catalog uses the existing `ac-urbanflow` managed identity; no keys, SAS tokens, connection strings, passwords, or client secrets are used. Silver, Gold, Snowflake, ADF, dbt, and Power BI remain unimplemented.
+Phase 5 Silver processing is implemented and live-validated on Unity Catalog Serverless compute. The May 2026 Bronze batch reconciles to 4,090,836 analytics-ready Silver trips and 265 taxi-zone dimension rows with zero quarantined records, duplicates, or referential-integrity failures. Expected source observations remain visible as quality warnings. Unity Catalog uses the existing `ac-urbanflow` managed identity; no keys, SAS tokens, connection strings, passwords, or client secrets are used. Gold, Snowflake, ADF, dbt, and Power BI remain unimplemented.
 
 ## Local acquisition
 
@@ -89,3 +89,20 @@ Yellow Taxi retries replace only the requested `_urbanflow_source_year` / `_urba
 The final Serverless validation reconciled 4,090,836 Yellow Taxi raw rows to 4,090,836 Delta rows and 265 taxi-zone raw rows to 265 Delta rows. Yellow Taxi is partitioned by `_urbanflow_source_year` and `_urbanflow_source_month`; taxi zones are unpartitioned. Two successful Yellow Taxi ingestion audits prove the retry retained stable cardinality.
 
 Bronze quality status is `WARNING`, as expected for preserved real TLC data: 14,231 rows have negative fare amounts and 14,877 have negative total amounts. Duplicate, invalid-timestamp, negative-passenger, and all requested null counts are zero. These findings are reported without removing or modifying Bronze records.
+
+## Silver processing
+
+Phase 5 transforms Bronze Delta into explicitly typed, snake-case Silver Delta datasets:
+
+```text
+bronze/delta/yellow_taxi/  ->  silver/fact_trips/
+                              silver/rejected/trips/
+bronze/delta/taxi_zones/   ->  silver/dim_taxi_zones/
+                              silver/rejected/taxi_zones/
+                              audit/silver_pipeline/
+                              audit/silver_quality/
+```
+
+Trips use deterministic SHA-256 fingerprints over standardized business columns and exact year/month partition replacement. Taxi zones use unpartitioned snapshot replacement. Rejected rows retain structured rule arrays and an uncast Bronze JSON payload; no record is silently discarded.
+
+Final Serverless validation reconciled all 4,090,836 Bronze trips to 4,090,836 valid Silver rows and all 265 Bronze zones to 265 valid dimension rows. Two fact runs produced stable counts, zero duplicate trip IDs, and zero pickup/dropoff referential failures. Quality is `WARNING`: 955,371 passenger counts are unknown, 14,231 fare amounts are negative, and 14,877 total amounts are negative. Those finite monetary values are retained as financial adjustments rather than assumed invalid.

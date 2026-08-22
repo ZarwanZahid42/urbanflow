@@ -181,3 +181,41 @@ The implemented Unity Catalog setup uses storage credential `urbanflow_adls_mana
 Unity Catalog Serverless validation completed successfully after source lineage was changed to the supported `_metadata.file_path` field. Yellow Taxi reconciled at 4,090,836 rows between raw Parquet and Delta after the second ingestion; taxi zones reconciled at 265 rows between raw CSV and Delta. `DESCRIBE DETAIL` confirmed the two intended Yellow Taxi partition columns and no taxi-zone partitions. Two successful Yellow Taxi audit records were checked.
 
 Quality completed with `WARNING`, not failure: negative fare amount count was 14,231 and negative total amount count was 14,877. Duplicate, invalid-timestamp, negative-passenger, and all four requested null counts were zero. The result validates the Phase 4 rule that real-source anomalies remain visible while Bronze records remain unchanged.
+
+## Implemented Phase 5 Silver transformation design
+
+### Explicit schema and standardization
+
+`fact_trips` renames TLC fields to stable snake_case names. Timestamps use Spark `timestamp`; vendor, rate, payment, and location IDs use `integer`; trip distance uses `double`; passenger count uses `decimal(10,2)` to avoid silently truncating unusual provider values. Fare components use `decimal(18,2)`, which provides cent precision and ample range without binary floating-point error. String flags and taxi-zone labels are trimmed, with the store-and-forward flag uppercased.
+
+Lineage columns are `source_file`, `ingested_at_utc`, `source_year`, `source_month`, and `bronze_run_id`. Silver adds `trip_id`, `is_financial_adjustment`, `silver_run_id`, and `silver_processed_at_utc`.
+
+### Classification and quarantine
+
+Trips are rejected for missing pickup/dropoff timestamps or locations, dropoff before pickup, negative passenger count, missing/non-finite/negative distance, missing required fare/total, monetary values that cannot fit `decimal(18,2)`, unknown pickup/dropoff zone IDs, or deterministic duplicates. A row can fail multiple rules; quarantine stores `rejection_rules` as an ordered array, `rejection_rule` as the primary rule, and `rejection_reason` as a pipe-delimited summary. `bronze_record_json` preserves original uncast values for diagnosis.
+
+Taxi zones are rejected for null IDs, missing borough/zone names, or duplicate location IDs. Valid location IDs come from this reference contract, not a hardcoded range.
+
+### Monetary and passenger-count policy
+
+The official TLC dictionary defines payment codes for no-charge, disputed, and voided trips, while TLC notes that provider-submitted records are published without guaranteed accuracy. A negative amount alone is therefore not sufficient evidence that the trip should disappear from the analytical fact. Finite values that fit `decimal(18,2)` are retained and set `is_financial_adjustment=true`; counts remain Silver quality warnings. Null required fare/total, non-finite values, and decimal overflow are quarantined.
+
+The first live quality run showed that 955,371 rows—23.3539% of the batch—failed only because passenger count was null. Passenger count is provider/driver-reported and does not determine whether a trip occurred, so null is retained as analytically unknown; negative passenger counts remain invalid. This policy preserved otherwise valid trips while making missingness visible in quality metrics.
+
+Sources: [TLC Yellow Taxi data dictionary](https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_yellow.pdf) and [TLC Trip Record User Guide](https://www.nyc.gov/assets/tlc/downloads/pdf/trip_record_user_guide.pdf).
+
+### Deduplication, incrementality, and idempotency
+
+The source has no stable trip identifier. `trip_id` is a SHA-256 fingerprint over all standardized business columns. Within each source year/month, rows are ranked deterministically by source lineage; rank greater than one is quarantined as `DUPLICATE_TRIP`. The May 2026 batch contained zero duplicates.
+
+Fact and rejected-trip writes use Delta `overwrite` with an exact `replaceWhere` predicate on `source_year` and `source_month`, retaining all other months. Taxi-zone valid/rejected snapshots use full unpartitioned overwrite. A second live run produced the same 4,090,836 valid and zero rejected trip counts, and final validation checked two matching successful fact audits.
+
+### Silver quality thresholds and audit
+
+Quality is `FAILED` when the source is empty, no valid rows exist, valid plus rejected does not reconcile to source, or rejection rate exceeds 20%. It is `WARNING` when reconciliation passes but observed missing passenger counts, negative money, rejected rows, duplicates, timestamp failures, or location failures are nonzero. Otherwise it is `PASS`.
+
+Pipeline audits store run/pipeline/dataset, source and target paths, UTC timestamps, source/valid/rejected counts, quality status, schema fingerprint, duration, and sanitized error. Quality audit stores one structured row per metric and run. No credential material is recorded.
+
+### Final Serverless validation
+
+Job `713366891015169`, run `841707541463751`, completed all eight ordered tasks successfully with no user cluster configuration. Final counts were 4,090,836 Bronze trips, 4,090,836 valid Silver trips, zero rejected trips, 265 Bronze zones, 265 valid zones, and zero rejected zones. Referential failures and duplicate valid trip IDs were zero. Final quality was `WARNING` for 955,371 null passenger counts, 14,231 negative fares, and 14,877 negative totals; every requested timestamp/location anomaly, negative passenger/distance count, duplicate count, and rejection count was zero.

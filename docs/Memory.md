@@ -86,3 +86,25 @@ This file records durable architectural and implementation decisions. Add a date
 - **Final validation:** Unity Catalog Serverless compute successfully ran Yellow Taxi ingestion twice, taxi-zone ingestion, Bronze quality, and final reconciliation. Yellow Taxi raw and Delta counts both equal 4,090,836; taxi-zone raw and Delta counts both equal 265. Yellow Taxi partitions are `_urbanflow_source_year` and `_urbanflow_source_month`; taxi zones are unpartitioned. Two successful Yellow Taxi ingestion audits confirm idempotent retry cardinality.
 - **Final quality result:** `WARNING` is accepted as an observational Bronze outcome. Negative fare count is 14,231 and negative total count is 14,877. Duplicate, invalid-timestamp, negative-passenger, null pickup/dropoff timestamp, and null pickup/dropoff location counts are all zero. No records were removed or corrected.
 - **Serverless compatibility:** Source lineage uses the Unity Catalog-supported `_metadata.file_path` field rather than `input_file_name()`. This preserves source-file metadata without changing raw data, paths, Delta layout, audit behavior, or identity configuration.
+
+### 2026-08-23 — Phase 5 Silver transformation
+
+- **Decision:** Use explicit Spark types and snake_case contracts for `fact_trips` and `dim_taxi_zones`; use `decimal(18,2)` for money and `decimal(10,2)` for passenger count.
+- **Reason:** Silver must be analytics-ready without binary money error or silent truncation of unusual submitted values.
+- **Consequences:** Schema fingerprints and live validation confirm the intended types; invalid casts can be diagnosed from quarantine `bronze_record_json`.
+
+- **Decision:** Preserve finite negative amounts as financial adjustments rather than reject them solely by sign.
+- **Reason:** TLC payment semantics include no-charge, dispute, and voided records, and provider-submitted data is not guaranteed accurate. Sign alone does not prove a record should be discarded.
+- **Consequences:** `is_financial_adjustment` identifies these rows; 14,231 negative fares and 14,877 negative totals remain visible and produce quality warnings.
+
+- **Decision:** Treat null passenger count as unknown, not rejected; continue rejecting negative passenger counts.
+- **Reason:** The first live run showed 955,371 otherwise-valid rows (23.3539%) failed only the provisional null-passenger rule. Passenger count is provider/driver-reported and is not required to prove a trip occurred.
+- **Alternatives considered:** Quarantining all 955,371 rows was rejected because it would remove nearly a quarter of valid trips without a defensible trip-validity basis.
+- **Consequences:** All 4,090,836 trips are retained; missing passenger count is an explicit quality warning.
+
+- **Decision:** Generate deterministic trip IDs from a SHA-256 fingerprint of all standardized business fields and quarantine later ranks within a source month.
+- **Reason:** TLC Yellow Taxi data has no stable trip identifier, and bare `dropDuplicates()` would be undocumented and nondeterministic.
+- **Consequences:** Reruns replace the same year/month partition, zero duplicate valid trip IDs were observed, and two successful fact audits reconcile identically.
+
+- **Final validation:** Databricks Serverless job `713366891015169`, run `841707541463751`, succeeded with no user cluster. Trips reconciled 4,090,836 source = 4,090,836 valid + 0 rejected; zones reconciled 265 = 265 + 0. Referential failures and duplicate valid trip IDs were zero. Final quality was `WARNING`, audits and schemas were verified, the second run was stable, and 48 local tests passed.
+- **Security/operations:** Existing managed-identity Unity Catalog access was reused. No Azure infrastructure or secret material changed. Serverless compute terminated automatically; the saved validation job is stopped.

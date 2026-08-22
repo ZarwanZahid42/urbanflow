@@ -1,6 +1,6 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-23):** Phase 4 Databricks Bronze processing is complete and live-validated on Unity Catalog Serverless compute. Yellow Taxi raw and Delta counts reconcile at 4,090,836; taxi-zone raw and Delta counts reconcile at 265; two successful Yellow Taxi ingestion audits confirm retry idempotency. The expected quality status is `WARNING` because real source records include negative fare and total amounts. Local validation passes 35 tests. ADF, Silver, Gold, Snowflake, dbt, and Power BI remain unimplemented.
+**Current phase status (2026-08-23):** Phase 5 Silver processing is implemented and live-validated on Unity Catalog Serverless compute. The 4,090,836-row Yellow Taxi batch and 265-row taxi-zone reference fully reconcile to valid Silver outputs with zero quarantined rows, duplicates, or referential failures. Two Silver fact runs prove idempotency. Final quality is `WARNING` for preserved missing passenger counts and negative financial observations. Local validation passes 48 tests. Gold, Snowflake, ADF, dbt, and Power BI remain unimplemented.
 
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
@@ -42,11 +42,14 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 5. Databricks Silver transformations
 
-- **Objective:** Produce clean, typed, deduplicated, conformed datasets.
-- **Major tasks:** Configure Databricks access; implement PySpark schema enforcement, normalization, validation, quarantine, deduplication, zone enrichment, and incremental Delta merges.
-- **Expected deliverables:** Silver Delta tables, transformation jobs, tests, and quality metrics.
-- **Dependencies:** Phase 4 and approved Databricks workspace/compute.
-- **Manual cloud work:** Yes—workspace access, identity, secret integration, policies, and job compute need configuration.
+- **Status:** Implemented and live-validated; changes remain uncommitted pending Phase 5 review.
+- **Objective:** Produce typed, standardized, deduplicated, referentially valid trip facts and taxi-zone dimensions without losing rejected source records.
+- **Implemented deliverables:** Four Serverless notebooks; reusable Silver rules, transformations, and audit utilities; Delta fact/dimension/quarantine/audit targets; structured multi-rule rejection; explicit Spark types; reference-driven zone validation; deterministic SHA-256 trip IDs; monthly partition replacement; snapshot replacement for zones; and 13 new PySpark-free tests.
+- **Validation:** Databricks job `713366891015169`, successful run `841707541463751`, processed the full notebook order twice where required. Counts were 4,090,836 Bronze trips = 4,090,836 valid + 0 rejected, and 265 Bronze zones = 265 valid + 0 rejected. Two stable fact audits, zero duplicate valid trip IDs, zero referential failures, correct partitions, schemas, and audit tables were verified.
+- **Quality:** `WARNING` with zero rejection rate. Preserved observations were 955,371 null passenger counts, 14,231 negative fares, and 14,877 negative totals. All requested null timestamp/location, invalid timestamp/location, negative passenger/distance, duplicate, and referential-failure counts were zero.
+- **Dependencies:** Completed Phase 4 Bronze Delta, Unity Catalog external location `urbanflow_adls_root`, and Databricks Serverless.
+- **Cloud work:** Eight notebooks and one stopped Serverless validation job were created in the Databricks workspace. No Azure infrastructure, keys, SAS tokens, connection strings, passwords, client secrets, or service principals were created or changed.
+- **Scope boundary:** Gold, Snowflake, dbt, ADF, Power BI, and unrelated future work remain unimplemented.
 
 ## 6. Gold dimensional model
 
