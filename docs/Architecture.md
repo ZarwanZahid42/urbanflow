@@ -88,3 +88,34 @@ NOAA CDO API v2 ─────┘   (optional; token required)
 TLC files are streamed to temporary files and atomically moved into place. A configured year/month produces exactly one trip-file request. Existing outputs are not downloaded again unless forced. NOAA uses its official token header and paginated `limit`/`offset` requests and combines the returned observations into one raw JSON artifact.
 
 These local paths model the future lake organization but are not ADLS Gen2, Delta Lake, or a cloud Bronze layer. ADF, Azure Databricks, Snowflake, dbt, and Power BI remain planned components.
+
+## Implemented Phase 3 ADLS Gen2 layer
+
+Phase 3 adds the implemented cloud boundary between local source acquisition and the Azure data lake:
+
+```text
+Phase 2 local Bronze files
+        ↓
+Python ADLS uploader + DefaultAzureCredential
+        ↓
+ADLS Gen2: urbanflowdata2026 / urbanflow / bronze/...
+```
+
+The existing infrastructure was created manually:
+
+- subscription: `Azure for Students`;
+- resource group: `rg-urbanflow`;
+- HNS-enabled storage account: `urbanflowdata2026`;
+- region: Central India;
+- filesystem: `urbanflow`; and
+- authentication and data access: Microsoft Entra identity with local Azure CLI sign-in.
+
+Application code neither provisions nor configures these resources. It constructs `https://urbanflowdata2026.dfs.core.windows.net`, authenticates through `DefaultAzureCredential`, obtains the existing filesystem client, and creates only the parent directories required by files being uploaded. Storage keys, SAS tokens, connection strings, and passwords are not used.
+
+The implemented cloud paths are:
+
+- `bronze/tlc/yellow/year=2026/month=05/source.parquet`
+- `bronze/reference/taxi_zones/taxi_zone_lookup.csv`
+- `bronze/weather/year=YYYY/month=MM/observations.json` when a local weather file exists
+
+`silver/`, `gold/`, and unrelated empty directories are not created by the uploader. Azure Databricks, ADF, Snowflake, dbt, and Power BI remain planned and unimplemented.

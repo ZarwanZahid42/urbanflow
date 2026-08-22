@@ -1,6 +1,6 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-22):** Phase 2 real-data acquisition is implemented locally with configurable official TLC monthly Parquet acquisition, the TLC taxi-zone CSV, optional paginated NOAA CDO v2 acquisition, JSON Lines auditing, mocked network tests, and a validated May 2026 Yellow Taxi development slice. A NOAA token remains a manual prerequisite for live weather acquisition. Phase 3 cloud work has not started.
+**Current phase status (2026-08-22):** Phase 3 ADLS Gen2 integration is implemented and validated. May 2026 Yellow Taxi data and the TLC taxi-zone lookup are uploaded to the existing `urbanflowdata2026` / `urbanflow` data lake through `DefaultAzureCredential`. Remote existence checks prevent repeat uploads. Phase 4 Bronze ingestion and all Databricks, ADF, Snowflake, dbt, and Power BI work remain unimplemented.
 
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
@@ -22,11 +22,12 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 3. Azure/ADLS Gen2 setup
 
-- **Objective:** Provision a secure Azure landing zone for the data lake.
-- **Major tasks:** Define naming and environments; create or approve resource group, storage account, hierarchical namespace, containers, identities, access assignments, lifecycle rules, and budget controls.
-- **Expected deliverables:** Reachable ADLS Gen2 paths, access model, and documented configuration.
-- **Dependencies:** Phases 1-2 and Azure access.
-- **Manual cloud work:** Yes—subscription selection, permissions, security review, and resource creation require explicit approval.
+- **Status:** Complete for the Phase 3 scope; existing infrastructure and two uploaded Bronze files were verified live.
+- **Objective:** Connect the local acquisition layer to the secure existing Azure data lake.
+- **Major tasks:** Confirm the manually provisioned HNS-enabled account/filesystem, implement identity-authenticated ADLS clients, preserve Bronze partition paths, add staged chunk uploads, enforce existence/overwrite checks, audit outcomes, and validate May 2026 TLC/reference uploads.
+- **Expected deliverables:** `DefaultAzureCredential` integration, tested file/directory uploader, ADLS Bronze paths, local upload audit, verified 69,699,174-byte TLC file, and verified 12,331-byte taxi-zone file.
+- **Dependencies:** Phases 1-2, Azure CLI authentication, and existing data-plane permissions.
+- **Manual cloud work:** Completed before application implementation: subscription/resource group selection, HNS storage account and filesystem creation, identity access configuration, and Azure CLI sign-in. Application code did not provision or reconfigure resources.
 
 ## 4. Bronze ingestion
 

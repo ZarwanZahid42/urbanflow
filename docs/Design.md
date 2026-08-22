@@ -122,3 +122,28 @@ Downloads use a deterministic `.part` path in the destination directory. HTTP st
 NOAA defaults to the `GHCND` daily dataset and Central Park station `GHCND:USW00094728`, with configurable dates and units. Live weather acquisition is disabled when `NOAA_API_TOKEN` is absent and no NOAA request is made. The token must be obtained manually from NOAA before enabling that source.
 
 The local audit schema contains `run_id`, source, dataset, URL, UTC start/completion timestamps, status, records or bytes, local path, and sanitized error text. Local source artifacts and audit files stay ignored by Git.
+
+## Implemented Phase 3 Azure storage design
+
+`src/azure_storage/` adds a narrow storage boundary without changing Phase 2 acquisition:
+
+- `config.py` accepts only non-secret account, filesystem, and local data-path configuration.
+- `client.py` creates `DefaultAzureCredential` and `DataLakeServiceClient` instances, maps local Bronze paths to POSIX ADLS paths, checks remote properties, uploads files or directory contents, and validates final sizes.
+- `uploader.py` selects TLC, taxi-zone, weather, or all available files for the configured month and never triggers a source download.
+- `audit.py` writes credential-free upload outcomes to `data/audit/azure_upload_audit.jsonl`.
+
+### Upload safety and idempotency
+
+Before writing, the client reads remote file properties. A matching remote size returns `skipped` and transfers zero bytes. A size mismatch fails with an explicit conflict unless the operator deliberately supplies `--overwrite` after review.
+
+New content is written in 4 MiB chunks to a unique temporary file beside the destination. The client flushes and verifies the staged byte count, atomically renames the staging file to the final path, and verifies the published size. A failed staged upload triggers cleanup of its temporary object. Only directories needed by an uploaded file are created.
+
+### Identity and audit
+
+Local authentication uses `DefaultAzureCredential`; during validation it selected the identity already authenticated through Azure CLI. Account keys, SAS tokens, connection strings, client secrets, and passwords are not accepted or logged.
+
+Each source attempt records run ID, source, absolute local path, remote path, storage account, filesystem, UTC timestamps, status, bytes uploaded, and sanitized error text. Missing local weather is an audited skip rather than a failure.
+
+### Integration validation
+
+The May 2026 Yellow Taxi Parquet file and TLC taxi-zone CSV were uploaded to the existing `urbanflow` filesystem and verified at 69,699,174 and 12,331 bytes respectively. A second non-overwrite run detected both files and skipped them with zero transferred bytes. The first integration attempt was audited as failed after a single large SDK request timed out and before any final file was published; the implemented chunked staging design corrected that behavior.

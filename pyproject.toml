@@ -11,6 +11,8 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "UrbanFlow Contributors" }]
 dependencies = [
+    "azure-identity>=1.17,<2",
+    "azure-storage-file-datalake>=12.17,<13",
     "python-dotenv>=1.0,<2",
     "requests>=2.32,<3",
 ]
