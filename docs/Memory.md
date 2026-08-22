@@ -63,3 +63,26 @@ This file records durable architectural and implementation decisions. Add a date
 - **Reason:** Why it was selected.
 - **Alternatives considered:** Relevant alternatives, if any.
 - **Consequences:** Implementation and operational effects.
+
+### 2026-08-23 — Phase 4 Databricks Bronze processing
+
+- **Decision:** Keep landed TLC Parquet/CSV objects immutable and write separate Delta datasets under `bronze/delta/`.
+- **Reason:** Raw recovery fidelity and replayability must remain independent from optimized Bronze persistence.
+- **Consequences:** Notebooks read only the two existing raw paths. Yellow Taxi writes are partition-scoped replacements by source year/month; taxi zones are an unpartitioned replaceable snapshot.
+
+- **Decision:** Use Unity Catalog storage credential `urbanflow_adls_managed_identity` and external location `urbanflow_adls_root`, backed by the existing `ac-urbanflow` system-assigned managed identity.
+- **Reason:** Managed identity gives Databricks least-secret access to the existing ADLS filesystem.
+- **Alternatives considered:** Keys, SAS tokens, connection strings, passwords, service principals, and client secrets were rejected.
+- **Consequences:** The Access Connector and RBAC remain Azure-managed prerequisites; the Databricks workspace stores no secret credential material.
+
+- **Decision:** Treat Bronze content anomalies as zero-threshold warnings and reserve failures for unreadable/empty input, required-schema loss, or persistence/reconciliation failures.
+- **Reason:** Bronze must expose source quality without silently applying Silver business transformations.
+- **Consequences:** Nulls, duplicates, invalid chronology, and negative values are stored as metrics and never remove records.
+
+- **Decision:** Keep PySpark out of the local dependency set and isolate pure contracts from Spark execution.
+- **Reason:** Spark/Delta are supplied by Databricks; local tests should stay fast and deterministic.
+- **Consequences:** The 35-test local suite validates paths, audit shape, schema fingerprints, Unity Catalog source metadata, quality classification, and writer semantics with small mocks.
+
+- **Final validation:** Unity Catalog Serverless compute successfully ran Yellow Taxi ingestion twice, taxi-zone ingestion, Bronze quality, and final reconciliation. Yellow Taxi raw and Delta counts both equal 4,090,836; taxi-zone raw and Delta counts both equal 265. Yellow Taxi partitions are `_urbanflow_source_year` and `_urbanflow_source_month`; taxi zones are unpartitioned. Two successful Yellow Taxi ingestion audits confirm idempotent retry cardinality.
+- **Final quality result:** `WARNING` is accepted as an observational Bronze outcome. Negative fare count is 14,231 and negative total count is 14,877. Duplicate, invalid-timestamp, negative-passenger, null pickup/dropoff timestamp, and null pickup/dropoff location counts are all zero. No records were removed or corrected.
+- **Serverless compatibility:** Source lineage uses the Unity Catalog-supported `_metadata.file_path` field rather than `input_file_name()`. This preserves source-file metadata without changing raw data, paths, Delta layout, audit behavior, or identity configuration.

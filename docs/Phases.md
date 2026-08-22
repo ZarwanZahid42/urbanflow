@@ -1,6 +1,6 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-22):** Phase 3 ADLS Gen2 integration is implemented and validated. May 2026 Yellow Taxi data and the TLC taxi-zone lookup are uploaded to the existing `urbanflowdata2026` / `urbanflow` data lake through `DefaultAzureCredential`. Remote existence checks prevent repeat uploads. Phase 4 Bronze ingestion and all Databricks, ADF, Snowflake, dbt, and Power BI work remain unimplemented.
+**Current phase status (2026-08-23):** Phase 4 Databricks Bronze processing is complete and live-validated on Unity Catalog Serverless compute. Yellow Taxi raw and Delta counts reconcile at 4,090,836; taxi-zone raw and Delta counts reconcile at 265; two successful Yellow Taxi ingestion audits confirm retry idempotency. The expected quality status is `WARNING` because real source records include negative fare and total amounts. Local validation passes 35 tests. ADF, Silver, Gold, Snowflake, dbt, and Power BI remain unimplemented.
 
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
@@ -31,11 +31,14 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 4. Bronze ingestion
 
-- **Objective:** Land immutable real source data and create traceable Bronze Delta tables.
-- **Major tasks:** Implement parameterized ingestion, source validation, metadata capture, partition layout, idempotent writes, and run auditing.
-- **Expected deliverables:** Real TLC and weather data in landing/Bronze storage with repeatable ingestion tests.
-- **Dependencies:** Phases 2-3.
-- **Manual cloud work:** Yes—credentials/managed identity and execution configuration must be established.
+- **Status:** Complete—implemented locally, synchronized to Databricks, and live-validated on Unity Catalog Serverless compute.
+- **Objective:** Convert the two existing immutable raw TLC objects into traceable Bronze Delta datasets and publish report-only quality/audit results.
+- **Implemented deliverables:** Parameterized Yellow Taxi ingestion; taxi-zone ingestion; required-schema and nonempty-source gates; technical metadata; year/month Yellow partition replacement; unpartitioned reference replacement; report-only quality metrics; structured Delta audit records; a live reconciliation notebook; and locally testable pure-Python contracts.
+- **Dependencies:** Phases 2-3, `dbw-urbanflow`, Access Connector `ac-urbanflow`, and the existing raw objects.
+- **Workspace configuration performed:** Unity Catalog storage credential `urbanflow_adls_managed_identity`, external location `urbanflow_adls_root`, workspace folder `/Users/zarwanzahid42@gmail.com/UrbanFlow/Phase4`, and a single-node validation cluster with 20-minute auto-termination. No Azure resource was created, modified, or deleted.
+- **Exact manual equivalent:** Catalog **Connect > Credentials** → create an Azure managed-identity storage credential referencing the full `ac-urbanflow` resource ID; Catalog **External data > External locations** → create an external location for `abfss://urbanflow@urbanflowdata2026.dfs.core.windows.net/` using that credential. The Access Connector RBAC assignment is an Azure prerequisite and was already complete.
+- **Validation status:** Final Serverless validation succeeded. Yellow Taxi reconciled 4,090,836 raw rows to 4,090,836 Delta rows; taxi zones reconciled 265 raw rows to 265 Delta rows. Yellow Taxi uses the two intended source-period partitions and taxi zones have none. Two successful Yellow Taxi ingestion audits were checked. Quality completed with expected `WARNING`: 14,231 negative fare amounts and 14,877 negative total amounts; duplicate, invalid-timestamp, negative-passenger, and all requested null counts were zero. The complete local suite passes 35 tests.
+- **Scope boundary:** Weather Bronze, Silver, Gold, quarantine, ADF orchestration, Snowflake, dbt, and Power BI are not part of this phase.
 
 ## 5. Databricks Silver transformations
 

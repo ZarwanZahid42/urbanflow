@@ -118,4 +118,24 @@ The implemented cloud paths are:
 - `bronze/reference/taxi_zones/taxi_zone_lookup.csv`
 - `bronze/weather/year=YYYY/month=MM/observations.json` when a local weather file exists
 
-`silver/`, `gold/`, and unrelated empty directories are not created by the uploader. Azure Databricks, ADF, Snowflake, dbt, and Power BI remain planned and unimplemented.
+`silver/`, `gold/`, and unrelated empty directories are not created by the uploader. Phase 4 now implements the Databricks Bronze processing boundary described below. ADF, Silver, Gold, Snowflake, dbt, and Power BI remain planned and unimplemented.
+
+## Implemented Phase 4 Databricks Bronze layer
+
+Phase 4 separates immutable landed source objects from queryable Bronze Delta datasets:
+
+```text
+ADLS raw Bronze (immutable)
+├── bronze/tlc/yellow/year=2026/month=05/source.parquet
+└── bronze/reference/taxi_zones/taxi_zone_lookup.csv
+                 ↓ Azure Databricks / PySpark
+ADLS processed Bronze
+├── bronze/delta/yellow_taxi/  (_urbanflow_source_year, _urbanflow_source_month)
+├── bronze/delta/taxi_zones/   (unpartitioned)
+├── audit/bronze_pipeline/     (Delta run records)
+└── audit/bronze_quality/      (Delta metric records)
+```
+
+The `dbw-urbanflow` Trial workspace in Central India accesses `abfss://urbanflow@urbanflowdata2026.dfs.core.windows.net/` through Unity Catalog. Storage credential `urbanflow_adls_managed_identity` references the existing system-assigned identity on Access Connector `ac-urbanflow`; external location `urbanflow_adls_root` scopes that credential to the existing filesystem. The connector already has Storage Blob Data Contributor on the storage account. No storage key, SAS token, connection string, password, service principal, or client secret participates in this path.
+
+Ingestion adds source-file, UTC ingestion timestamp, run ID, and—on trips—source year/month metadata while preserving source columns. Delta batch replacement gives retry idempotency: one Yellow Taxi period is atomically replaced rather than appended, while the small taxi-zone snapshot is fully replaced without partitions. Data-quality findings remain observational in Bronze. Unreadable or empty input, required-schema loss, and write/count verification failures are critical ingestion failures; reported content anomalies do not remove records.

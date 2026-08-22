@@ -1,6 +1,6 @@
 # UrbanFlow Technical Design
 
-This document describes the intended design. It is not an implementation-status report; the pipelines and external resources described below have not yet been created.
+This document distinguishes the implemented Phase 2-4 acquisition, ADLS, and Databricks Bronze boundaries from the intended Silver-and-later design. Later-phase sections remain proposals unless explicitly marked implemented.
 
 ## Source data ingestion
 
@@ -147,3 +147,37 @@ Each source attempt records run ID, source, absolute local path, remote path, st
 ### Integration validation
 
 The May 2026 Yellow Taxi Parquet file and TLC taxi-zone CSV were uploaded to the existing `urbanflow` filesystem and verified at 69,699,174 and 12,331 bytes respectively. A second non-overwrite run detected both files and skipped them with zero transferred bytes. The first integration attempt was audited as failed after a single large SDK request timed out and before any final file was published; the implemented chunked staging design corrected that behavior.
+
+## Implemented Phase 4 Bronze processing design
+
+### Notebook and path contract
+
+- `01_ingest_yellow_taxi.py` reads the configured raw year/month Parquet object with its inferred source schema, verifies required fields and a nonzero count, preserves every source column, and adds `_urbanflow_source_file`, `_urbanflow_ingested_at_utc`, `_urbanflow_run_id`, `_urbanflow_source_year`, and `_urbanflow_source_month`.
+- `02_ingest_taxi_zones.py` reads the headered CSV with inferred source types, verifies `LocationID`, `Borough`, `Zone`, and `service_zone`, and adds source-file, ingestion-time, and run metadata.
+- `03_bronze_quality.py` reads the processed Yellow Taxi Delta batch and appends report-only metrics.
+- `04_validate_phase4.py` reconciles raw and Delta counts, metadata, partition columns, quality output, and two successful Yellow Taxi retry audits.
+- `utilities/bronze_common.py`, `audit.py`, and `quality.py` hold shared contracts. Spark imports are lazy so local tests require no PySpark installation.
+
+The configured root is `abfss://urbanflow@urbanflowdata2026.dfs.core.windows.net/`. Raw objects are never write targets. Processed targets are `bronze/delta/yellow_taxi/`, `bronze/delta/taxi_zones/`, `audit/bronze_pipeline/`, and `audit/bronze_quality/`.
+
+### Quality classification and thresholds
+
+Critical ingestion failures stop the notebook and append a `FAILED` pipeline audit when possible: unreadable source/target, zero source rows, missing required columns, Delta write failure, or post-write row-count mismatch. Content checks are report-only warnings with a zero threshold: any null pickup timestamp, null dropoff timestamp, null pickup location, null dropoff location, exact duplicate excess row, dropoff earlier than pickup, negative passenger count, negative fare amount, or negative total amount produces `quality_status=WARNING`. Zero findings across those metrics produces `PASSED`. No quality rule filters, fixes, deduplicates, quarantines, or promotes Bronze records.
+
+Exact duplicates are evaluated across the preserved source columns and counted as excess rows beyond the first copy. Null timestamp/location counts are separate from chronology. The initial Phase 4 invalid-timestamp definition is specifically a non-null dropoff earlier than pickup.
+
+### Audit, schema, and idempotency
+
+`audit/bronze_pipeline/` is append-only Delta with `run_id`, `pipeline_name`, `dataset`, `source_path`, `target_path`, `started_at_utc`, `completed_at_utc`, `status`, `row_count`, `schema_version`, `quality_status`, `error`, and `duration_ms`. Schema version is a SHA-256 fingerprint of Spark schema JSON. `audit/bronze_quality/` stores one row per metric with run, dataset, value, threshold, and outcome.
+
+Yellow Taxi is partitioned only by `_urbanflow_source_year` and `_urbanflow_source_month`. Its writer uses Delta `overwrite` with an exact `replaceWhere` predicate, so a retry replaces one batch while retaining other periods and cannot append retry copies. Taxi zones remain unpartitioned and use complete snapshot overwrite. Both writers verify persisted cardinality.
+
+### Databricks workspace configuration
+
+The implemented Unity Catalog setup uses storage credential `urbanflow_adls_managed_identity` with the system-assigned managed identity at `/subscriptions/c6fc33b6-e352-46d2-8a92-81b8f1cd3e15/resourceGroups/rg-urbanflow/providers/Microsoft.Databricks/accessConnectors/ac-urbanflow`, plus external location `urbanflow_adls_root` at the filesystem root. An equivalent manual setup is: in Catalog, open **Connect > Credentials**, create a storage credential using **Azure managed identity** and that Access Connector resource ID; then open **External data > External locations**, create `urbanflow_adls_root` with the ABFSS root and the new credential. The Azure-side connector and Storage Blob Data Contributor assignment must already exist; do not create keys or secrets.
+
+### Final Phase 4 integration validation
+
+Unity Catalog Serverless validation completed successfully after source lineage was changed to the supported `_metadata.file_path` field. Yellow Taxi reconciled at 4,090,836 rows between raw Parquet and Delta after the second ingestion; taxi zones reconciled at 265 rows between raw CSV and Delta. `DESCRIBE DETAIL` confirmed the two intended Yellow Taxi partition columns and no taxi-zone partitions. Two successful Yellow Taxi audit records were checked.
+
+Quality completed with `WARNING`, not failure: negative fare amount count was 14,231 and negative total amount count was 14,877. Duplicate, invalid-timestamp, negative-passenger, and all four requested null counts were zero. The result validates the Phase 4 rule that real-source anomalies remain visible while Bronze records remain unchanged.

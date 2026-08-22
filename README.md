@@ -18,7 +18,7 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phase 3 connects the Phase 2 local acquisition outputs to the existing ADLS Gen2 data lake. May 2026 Yellow Taxi data and the TLC taxi-zone lookup are uploaded and size-verified in the `urbanflow` filesystem of `urbanflowdata2026`. Azure resources were created manually and are not provisioned by application code. Databricks, Snowflake, ADF, dbt, and Power BI remain unimplemented.
+Phase 4 Databricks/PySpark Bronze processing is implemented and live-validated on Unity Catalog Serverless compute for the May 2026 Yellow Taxi file and TLC taxi-zone lookup. The notebooks preserve raw files, write idempotent Delta datasets, report Bronze quality metrics, and append structured audit records. Unity Catalog uses the existing `ac-urbanflow` managed identity; no keys, SAS tokens, connection strings, passwords, or client secrets are used. Silver, Gold, Snowflake, ADF, dbt, and Power BI remain unimplemented.
 
 ## Local acquisition
 
@@ -69,3 +69,23 @@ urbanflow/
 Uploads use bounded chunks and a temporary remote file. The final path appears only after staged size verification and atomic rename. Upload outcomes are stored locally in `data/audit/azure_upload_audit.jsonl`.
 
 See [`docs/Phases.md`](docs/Phases.md) for the implementation roadmap and [`docs/Architecture.md`](docs/Architecture.md) for the intended architecture.
+
+## Databricks Bronze processing
+
+Phase 4 source notebooks are under `notebooks/bronze/`; reusable, locally testable contracts are under `notebooks/utilities/`. They run in Azure Databricks and intentionally do not add PySpark to the local environment.
+
+```text
+immutable raw ADLS objects                 processed Bronze Delta
+bronze/tlc/yellow/year=2026/month=05/  ->  bronze/delta/yellow_taxi/
+bronze/reference/taxi_zones/           ->  bronze/delta/taxi_zones/
+                                            audit/bronze_pipeline/
+                                            audit/bronze_quality/
+```
+
+Yellow Taxi retries replace only the requested `_urbanflow_source_year` / `_urbanflow_source_month` partition. Taxi zones are a small unpartitioned snapshot and use full replacement. Neither path overwrites the raw source objects. Quality checks report anomalies without filtering or correcting source records. See `docs/Design.md` for thresholds and `docs/Phases.md` for the Databricks workspace setup and validation status.
+
+### Phase 4 validation result
+
+The final Serverless validation reconciled 4,090,836 Yellow Taxi raw rows to 4,090,836 Delta rows and 265 taxi-zone raw rows to 265 Delta rows. Yellow Taxi is partitioned by `_urbanflow_source_year` and `_urbanflow_source_month`; taxi zones are unpartitioned. Two successful Yellow Taxi ingestion audits prove the retry retained stable cardinality.
+
+Bronze quality status is `WARNING`, as expected for preserved real TLC data: 14,231 rows have negative fare amounts and 14,877 have negative total amounts. Duplicate, invalid-timestamp, negative-passenger, and all requested null counts are zero. These findings are reported without removing or modifying Bronze records.
