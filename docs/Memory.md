@@ -108,3 +108,25 @@ This file records durable architectural and implementation decisions. Add a date
 
 - **Final validation:** Databricks Serverless job `713366891015169`, run `841707541463751`, succeeded with no user cluster. Trips reconciled 4,090,836 source = 4,090,836 valid + 0 rejected; zones reconciled 265 = 265 + 0. Referential failures and duplicate valid trip IDs were zero. Final quality was `WARNING`, audits and schemas were verified, the second run was stable, and 48 local tests passed.
 - **Security/operations:** Existing managed-identity Unity Catalog access was reused. No Azure infrastructure or secret material changed. Serverless compute terminated automatically; the saved validation job is stopped.
+
+### 2026-08-23 — Phase 6 Gold analytical layer
+
+- **Decision:** Preserve the one-valid-Silver-trip grain and deterministic `trip_id` in Gold.
+- **Reason:** Gold should add analytical structure without silently changing the validated trip population.
+- **Consequences:** Silver and Gold both contain 4,090,836 rows; duplicate Gold trip IDs and critical null keys are zero.
+
+- **Decision:** Use `yyyyMMdd` date keys, `HHmm` minute keys, and TLC location IDs as conformed dimension keys.
+- **Reason:** These keys are deterministic, human-auditable, stable for downstream Snowflake/BI use, and require no generated-key state.
+- **Consequences:** `dim_date` covers the complete represented range with 6,363 rows, `dim_time` has 1,440 rows, and `dim_location` has 265 rows. All fact relationships validate.
+
+- **Decision:** Guard all derived ratios and preserve financial adjustments explicitly.
+- **Reason:** Zero denominators must not produce infinity/NaN, and negative monetary records retained by Silver must remain analytically visible.
+- **Consequences:** Invalid derived metrics are zero. Gold exposes non-adjustment revenue and financial-adjustment amount separately; 14,953 adjustment trips produce a warning rather than data loss.
+
+- **Decision:** Replace facts and aggregates by source year/month and rebuild small dimensions as complete deterministic snapshots.
+- **Reason:** Monthly TLC batches are the established recovery boundary, while tiny reference dimensions are safer and simpler to replace fully.
+- **Alternatives considered:** Blind append was rejected because retries would duplicate facts and aggregates; overly granular date partitioning was rejected.
+- **Consequences:** Two complete Serverless passes and later verification retained stable table counts and at least two matching successful fact audits.
+
+- **Final validation:** Job `631815480020120`, runs `191548502476871` and `150700319211970`, completed all fourteen ordered Serverless tasks. Facts reconcile 4,090,836 to Silver; dimension counts are 6,363/1,440/265; aggregation counts are 35/265/748; every aggregation perspective reconciles to 4,090,836; critical quality metrics are zero; quality is `WARNING` for 955,371 unknown passenger counts and 14,953 adjustment trips. The local suite passes 62 tests.
+- **Security/operations:** Existing Unity Catalog managed-identity access was reused. No Azure infrastructure or secret material changed, and Serverless compute terminated automatically.

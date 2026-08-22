@@ -1,6 +1,6 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-23):** Phase 5 Silver processing is implemented and live-validated on Unity Catalog Serverless compute. The 4,090,836-row Yellow Taxi batch and 265-row taxi-zone reference fully reconcile to valid Silver outputs with zero quarantined rows, duplicates, or referential failures. Two Silver fact runs prove idempotency. Final quality is `WARNING` for preserved missing passenger counts and negative financial observations. Local validation passes 48 tests. Gold, Snowflake, ADF, dbt, and Power BI remain unimplemented.
+**Current phase status (2026-08-23):** Phase 6 Gold processing is implemented and live-validated on Unity Catalog Serverless compute. All 4,090,836 Silver trips reconcile to unique Gold facts and to daily, pickup, dropoff, and hourly aggregates with zero critical quality failures. Three dimensions have unique keys and zero referential failures; repeated partition replacement proves idempotency. Final quality is `WARNING` only for preserved unknown passenger counts and financial adjustments. Local validation passes 62 tests. Snowflake, ADF, dbt, and Power BI remain unimplemented.
 
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
@@ -53,11 +53,14 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 6. Gold dimensional model
 
-- **Objective:** Create business-ready mobility and weather models.
-- **Major tasks:** Define grain and keys; build trip fact, date/time, zone, service, rate-code, payment, and weather dimensions; create useful aggregates; validate measures.
-- **Expected deliverables:** Gold Delta fact/dimension tables, model documentation, and reconciliation tests.
-- **Dependencies:** Phase 5 and agreed business definitions.
-- **Manual cloud work:** Limited to running approved Databricks jobs and managing compute.
+- **Status:** Implemented and live-validated; changes remain unstaged and uncommitted pending review.
+- **Objective:** Publish a business-ready TLC mobility fact, reusable date/time/location dimensions, and reconciled daily/location/hourly aggregates.
+- **Implemented deliverables:** Seven ordered notebooks; reusable Gold rules, Spark transformations, and audit contracts; seven Delta analytical tables; Gold pipeline and quality audit paths; guarded derived measures; explicit financial-adjustment measures; batch replacement; and 14 new PySpark-free tests.
+- **Validation:** Serverless job `631815480020120`, successful two-pass runs `191548502476871` and `150700319211970`, reconciled 4,090,836 Silver trips to 4,090,836 unique Gold facts. Dimensions contain 6,363 dates, 1,440 minutes, and 265 locations. Aggregates contain 35 daily, 265 location, and 748 hourly rows; daily, pickup, dropoff, and hourly trip counts each reconcile to 4,090,836.
+- **Quality:** `WARNING` only for 955,371 null passenger counts and 14,953 financial-adjustment trips. Duplicate/null critical keys, dimension duplicates, date/time/location referential failures, impossible duration/distance, invalid derived metrics, schema failures, empty facts, and all three aggregation-reconciliation failures are zero.
+- **Idempotency:** Facts and aggregates replace only `source_year=2026/source_month=5`; dimensions are deterministic snapshots. Final validation checked at least two matching successful fact audits and stable cardinality.
+- **Cloud work:** Twelve sources were synchronized under `/Users/zarwanzahid42@gmail.com/UrbanFlow/Phase6` and one stopped Serverless validation job was created. No Azure infrastructure or secret-based authentication changed.
+- **Scope boundary:** Weather Gold, Snowflake, dbt, ADF, Power BI, and unrelated future work remain unimplemented.
 
 ## 7. Snowflake integration
 

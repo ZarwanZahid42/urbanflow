@@ -1,6 +1,6 @@
 # UrbanFlow Technical Design
 
-This document distinguishes the implemented Phase 2-4 acquisition, ADLS, and Databricks Bronze boundaries from the intended Silver-and-later design. Later-phase sections remain proposals unless explicitly marked implemented.
+This document describes implemented Phases 2-6 through the Databricks Gold boundary. Snowflake, dbt, orchestration, BI, and other later-phase sections remain proposals unless explicitly marked implemented.
 
 ## Source data ingestion
 
@@ -219,3 +219,29 @@ Pipeline audits store run/pipeline/dataset, source and target paths, UTC timesta
 ### Final Serverless validation
 
 Job `713366891015169`, run `841707541463751`, completed all eight ordered tasks successfully with no user cluster configuration. Final counts were 4,090,836 Bronze trips, 4,090,836 valid Silver trips, zero rejected trips, 265 Bronze zones, 265 valid zones, and zero rejected zones. Referential failures and duplicate valid trip IDs were zero. Final quality was `WARNING` for 955,371 null passenger counts, 14,231 negative fares, and 14,877 negative totals; every requested timestamp/location anomaly, negative passenger/distance count, duplicate count, and rejection count was zero.
+
+## Implemented Phase 6 Gold analytical design
+
+### Grain, schemas, and derived measures
+
+`gold/fact_trips` retains the Silver grain of one valid taxi trip and the original deterministic `trip_id`. It preserves source file, source year/month, ingestion timestamp, Bronze run, Silver run/timestamp, and adds Gold run/timestamp. Pickup/dropoff date keys use `yyyyMMdd`; time keys use `HHmm`; location keys remain validated TLC integers.
+
+Money retains the Silver `decimal(18,2)` contract. Trip duration, average speed, fare per mile, and tip percentage are doubles calculated only when their denominators are mathematically valid. Zero-duration speed, zero-distance fare-per-mile, and nonpositive-fare tip percentage are null. No calculation creates infinity or NaN. `non_adjustment_revenue` and `financial_adjustment_amount` make the two revenue views explicit without filtering a trip.
+
+### Dimensions and aggregates
+
+`dim_date` is generated from the minimum through maximum pickup/dropoff date represented by the complete Silver fact, so it grows reproducibly as Silver history grows. The current source range yields 6,363 continuous calendar rows. `dim_time` contains exactly 1,440 unique minute keys and Overnight, Morning, Afternoon, and Evening categories. `dim_location` is a traceable normalized snapshot of all 265 Silver taxi zones.
+
+Daily and hourly revenue is attributed to pickup date/time. Location revenue, distance, and averages are attributed to pickup location, while both pickup and dropoff trip counts are exposed. Aggregate rows retain source year/month so one bounded source batch can be replaced exactly. The live batch produced 35 daily, 265 location, and 748 hourly rows; their trip-count perspectives all reconcile to 4,090,836.
+
+### Idempotency, quality, and audit
+
+Fact and aggregate writers use Delta overwrite with exact `replaceWhere` predicates and year/month partitions. Dimensions use full overwrite because they are small deterministic reference outputs. Repeated workflow passes retained 4,090,836 unique fact rows and stable aggregate counts.
+
+Gold quality fails for empty facts, duplicate/null critical keys, duplicate dimension keys, date/time/location referential failures, impossible negative duration/distance, non-finite derived metrics, schema loss, or aggregate reconciliation failure. Missing passenger counts and financial-adjustment trips are warnings because Silver deliberately preserved them. Final quality was `WARNING`: 955,371 passenger counts were unknown and 14,953 trips contained at least one negative monetary component; every critical metric was zero.
+
+`audit/gold_pipeline/` records run, pipeline, dataset, source/target, UTC timestamps, status, row count, schema fingerprint, quality status, duration, and sanitized error. `audit/gold_quality/` records one typed row per metric and run. No credential material is recorded.
+
+### Final Serverless validation
+
+Databricks Serverless job `631815480020120` completed the fourteen-task two-pass workflow successfully in runs `191548502476871` and `150700319211970`. Final validation checked two successful fact audits, exact Silver/Gold cardinality, schemas, partitions, unique keys, all dimension relationships, aggregate reconciliation, and persisted quality metrics. Serverless terminated automatically and no Azure infrastructure or secret mechanism changed.

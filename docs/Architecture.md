@@ -118,7 +118,7 @@ The implemented cloud paths are:
 - `bronze/reference/taxi_zones/taxi_zone_lookup.csv`
 - `bronze/weather/year=YYYY/month=MM/observations.json` when a local weather file exists
 
-`silver/`, `gold/`, and unrelated empty directories are not created by the uploader. Phase 4 now implements the Databricks Bronze processing boundary described below. ADF, Silver, Gold, Snowflake, dbt, and Power BI remain planned and unimplemented.
+The uploader does not create `silver/`, `gold/`, or unrelated empty directories. Those downstream paths are owned by the separately implemented Databricks Bronze, Silver, and Gold processing phases described below. ADF, Snowflake, dbt, and Power BI remain planned and unimplemented.
 
 ## Implemented Phase 4 Databricks Bronze layer
 
@@ -159,3 +159,26 @@ Silver Delta
 The fact keeps source lineage, Bronze run ID, a deterministic `trip_id`, Silver run metadata, and an `is_financial_adjustment` flag. Valid trips are checked against the shared Silver taxi-zone contract derived from the actual reference table; zone IDs are never hardcoded. Quarantine keeps standardized fields, all failed rules, the primary rule, a joined reason string, rejection timestamp, lineage, and an uncast Bronze JSON snapshot.
 
 May 2026 live validation on Databricks Serverless produced 4,090,836 valid trips, zero rejected trips, 265 valid zones, and zero rejected zones. The final fact and zone tables have the intended partition strategies, zero duplicate trip IDs, and zero referential-integrity failures. Serverless runs with Unity Catalog external location `urbanflow_adls_root`; no Azure resource or secret-based authentication was added.
+
+## Implemented Phase 6 Gold layer
+
+```text
+Silver Delta
++-- fact_trips/ -----------+
++-- dim_taxi_zones/ ---+   |
+                       v   v
+Gold Delta
++-- fact_trips/             (source_year, source_month)
++-- dim_date/               (unpartitioned)
++-- dim_time/               (unpartitioned, minute grain)
++-- dim_location/           (unpartitioned)
++-- agg_daily_trips/        (source_year, source_month)
++-- agg_location_trips/     (source_year, source_month)
++-- agg_hourly_trips/       (source_year, source_month)
++-- audit/gold_pipeline/
++-- audit/gold_quality/
+```
+
+The Gold fact has one row per valid Silver trip and preserves its deterministic key and Bronze/Silver lineage. Date and time foreign keys are derived from pickup/dropoff timestamps; location foreign keys reuse the validated TLC identifiers. Derived measures are guarded against zero, non-finite, and invalid denominators. Financial adjustment rows remain present and are exposed separately from non-adjustment revenue.
+
+Small dimensions use complete deterministic snapshot replacement. The fact and aggregates use exact source-year/month Delta partition replacement, allowing bounded retries without duplicating other batches. Live Serverless validation reconciled 4,090,836 Silver and Gold facts, all three aggregation perspectives, and every dimension relationship with zero critical failures.

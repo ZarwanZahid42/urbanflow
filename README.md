@@ -18,7 +18,7 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phase 5 Silver processing is implemented and live-validated on Unity Catalog Serverless compute. The May 2026 Bronze batch reconciles to 4,090,836 analytics-ready Silver trips and 265 taxi-zone dimension rows with zero quarantined records, duplicates, or referential-integrity failures. Expected source observations remain visible as quality warnings. Unity Catalog uses the existing `ac-urbanflow` managed identity; no keys, SAS tokens, connection strings, passwords, or client secrets are used. Gold, Snowflake, ADF, dbt, and Power BI remain unimplemented.
+Phase 6 Gold processing is implemented and live-validated on Unity Catalog Serverless compute. All 4,090,836 valid Silver trips reconcile one-for-one to the Gold fact and to daily, pickup, dropoff, and hourly aggregates. Date, time, and location dimensions have verified unique keys and zero referential failures. Expected unknown passenger counts and financial adjustments remain visible as quality warnings. Unity Catalog continues to use the existing `ac-urbanflow` managed identity; no keys, SAS tokens, connection strings, passwords, or client secrets are used. Snowflake, ADF, dbt, and Power BI remain unimplemented.
 
 ## Local acquisition
 
@@ -106,3 +106,23 @@ bronze/delta/taxi_zones/   ->  silver/dim_taxi_zones/
 Trips use deterministic SHA-256 fingerprints over standardized business columns and exact year/month partition replacement. Taxi zones use unpartitioned snapshot replacement. Rejected rows retain structured rule arrays and an uncast Bronze JSON payload; no record is silently discarded.
 
 Final Serverless validation reconciled all 4,090,836 Bronze trips to 4,090,836 valid Silver rows and all 265 Bronze zones to 265 valid dimension rows. Two fact runs produced stable counts, zero duplicate trip IDs, and zero pickup/dropoff referential failures. Quality is `WARNING`: 955,371 passenger counts are unknown, 14,231 fare amounts are negative, and 14,877 total amounts are negative. Those finite monetary values are retained as financial adjustments rather than assumed invalid.
+
+## Gold processing
+
+Phase 6 publishes Delta facts, dimensions, aggregates, and structured audit outputs:
+
+```text
+silver/fact_trips/      -> gold/fact_trips/
+                           gold/dim_date/
+                           gold/dim_time/
+silver/dim_taxi_zones/ -> gold/dim_location/
+gold/fact_trips/        -> gold/agg_daily_trips/
+                           gold/agg_location_trips/
+                           gold/agg_hourly_trips/
+                           audit/gold_pipeline/
+                           audit/gold_quality/
+```
+
+The fact retains the Silver `trip_id`, source-period partitions, Bronze/Silver lineage, and every valid trip. It adds date/time keys, duration, speed, fare-per-mile, tip percentage, Gold run lineage, and separate non-adjustment/financial-adjustment revenue measures. Invalid divisions produce null rather than zero, infinity, or NaN; null passenger counts remain unknown.
+
+Final Serverless validation produced 4,090,836 fact rows, 6,363 date rows, 1,440 minute rows, 265 location rows, 35 daily rows, 265 location-aggregate rows, and 748 hourly rows. Every aggregate reconciled to 4,090,836 trips, dimension referential failures and duplicate keys were zero, and repeated partition replacement retained stable fact cardinality. Quality is `WARNING` only for 955,371 null passenger counts and 14,953 financial-adjustment trips.
