@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments and secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# IDE and operating system files
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# Databricks local artifacts
+.databricks/
+databricks.yml.lock
+
+# dbt generated artifacts and local profiles
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/profiles.yml
+
+# Logs, temporary files, and caches
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+*.swp
+*.bak
+
+# Local data: keep only the directory marker under version control
+data/*
+!data/.gitkeep
+*.parquet
+*.csv
+*.jsonl
+*.avro
+*.orc
+*.delta

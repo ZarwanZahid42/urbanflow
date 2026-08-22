@@ -1,0 +1,2 @@
+# No third-party runtime dependencies are required for the foundation phase.
+# Add dependencies only when an implementation phase requires them.

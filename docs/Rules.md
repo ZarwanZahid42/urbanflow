@@ -1,0 +1,102 @@
+# UrbanFlow Engineering Rules
+
+## Code quality
+
+- Keep modules small, cohesive, typed where practical, and free of unused code.
+- Prefer straightforward implementations over premature abstraction.
+- Add a dependency only when it solves a current requirement.
+- Run the relevant formatter, linter, and tests before merging changes.
+
+## Naming conventions
+
+- Use `snake_case` for Python functions, variables, modules, tables, columns, and SQL models.
+- Use `PascalCase` for Python classes and `UPPER_SNAKE_CASE` for constants.
+- Use descriptive domain names and avoid unexplained abbreviations.
+- Name storage paths and jobs consistently by layer, source, entity, and purpose.
+
+## Python style
+
+- Target Python 3.11 or later and follow PEP 8.
+- Use type hints on public functions and concise docstrings for non-obvious behavior.
+- Separate I/O, transformation logic, and configuration.
+- Do not embed environment-specific paths, identifiers, or credentials in code.
+
+## SQL style
+
+- Use lowercase `snake_case` identifiers and explicit column lists.
+- Write readable CTE-based transformations and qualify ambiguous columns.
+- Avoid `select *` in production models.
+- Document business logic and use deterministic ordering where results depend on order.
+
+## Secrets and environment variables
+
+- Never commit passwords, tokens, keys, connection strings, or populated `.env` files.
+- Local secrets belong in ignored environment files; cloud secrets belong in approved secret stores.
+- Commit placeholders only in `.env.example`.
+- Fail clearly when required configuration is absent; never silently use insecure defaults.
+
+## Data quality
+
+- Define checks for schema, uniqueness, nullability, accepted values, ranges, and relationships.
+- Quarantine invalid records when recovery or investigation is valuable.
+- Record quality results and thresholds by run and dataset.
+- Reconcile row counts and key metrics between material processing boundaries.
+
+## Idempotency
+
+- Every pipeline step must be safe to retry for the same batch or partition.
+- Use deterministic keys and merge/overwrite semantics appropriate to the dataset.
+- Do not append blindly where a retry could duplicate data.
+
+## Incremental processing
+
+- Parameterize processing by an explicit watermark, batch, or bounded date range.
+- Persist successful watermarks only after downstream completion.
+- Support deliberate backfills without disturbing unrelated partitions.
+
+## Logging
+
+- Emit structured logs with run ID, component, dataset, stage, and status.
+- Record start/end times, source identifiers, row counts, and error context.
+- Never log secrets or unnecessarily expose sensitive configuration.
+
+## Error handling
+
+- Fail fast on invalid configuration and critical schema violations.
+- Use bounded retries only for transient failures.
+- Preserve actionable error context and distinguish rejected data from infrastructure failures.
+- Do not suppress exceptions without recording and handling the failure state.
+
+## Testing
+
+- Unit-test deterministic transformation and utility logic.
+- Add integration tests at storage, orchestration, and warehouse boundaries when those components exist.
+- Test critical dbt constraints and business relationships.
+- Include regression tests for every corrected defect where practical.
+
+## Documentation
+
+- Keep architecture, setup, operational steps, schemas, and decisions aligned with implementation.
+- Update `Memory.md` when an architectural or consequential implementation decision is made.
+- Never claim that a planned feature is implemented.
+
+## Git conventions
+
+- Use focused branches and small, coherent commits with imperative messages.
+- Do not commit generated artifacts, local data, secrets, or environment-specific state.
+- Review diffs and ensure tests pass before opening or merging a pull request.
+- Commit at meaningful phase milestones rather than committing incomplete scaffolding by default.
+
+## Cloud-resource safety
+
+- Do not create, modify, or delete Azure, Databricks, Snowflake, Power BI, or other external resources without explicit instruction.
+- Inspect the target environment, subscription/account, region, and resource names before approved changes.
+- Prefer least privilege, tagging, cost controls, and reversible changes.
+- Never introduce AWS services unless the project scope is explicitly changed.
+
+## Data and dependency constraints
+
+- Never use fake data as production input or present synthetic results as real analysis.
+- Small test fixtures may be introduced only when needed for automated tests and must be clearly identified.
+- Do not add unnecessary dependencies or install packages globally.
+- Pin or constrain dependencies when implementation begins and review their licenses and security posture.
