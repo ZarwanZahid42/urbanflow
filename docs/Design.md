@@ -1,6 +1,6 @@
 # UrbanFlow Technical Design
 
-This document describes implemented Phases 2-6 through the Databricks Gold boundary. Snowflake, dbt, orchestration, BI, and other later-phase sections remain proposals unless explicitly marked implemented.
+This document describes implemented and live-validated Phases 2-7. dbt, orchestration, BI, and later phases remain proposals unless explicitly marked implemented.
 
 ## Source data ingestion
 
@@ -71,7 +71,9 @@ Surrogate keys, unknown members, slowly changing behavior, and late-arriving rec
 
 ## Snowflake loading
 
-Gold data will enter Snowflake through an Azure-compatible, least-privilege loading pattern chosen during integration design. Loads will be batch-aware and idempotent, using staged files and `copy`, streams/tasks, or controlled `merge` operations as justified by the final architecture. Load audit records will reconcile staged, accepted, updated, rejected, and target counts. Credentials will never be embedded in code or dbt profiles committed to Git.
+Phase 7 uses Databricks Serverless's supported Snowflake Spark connector with `sfauthenticator=snowflake_jwt`, `pem_private_key`, name-based column mapping, staging-table safety, and Snowflake-managed internal transfer staging. Connector options are produced by one reusable utility and never include a password, Azure credential, external-stage path, or repository-held key. The private PEM is retrieved at runtime from a configurable Databricks secret scope; secret retrieval fails closed with an actionable message. At the Spark boundary, UrbanFlow normalizes actual or escaped line endings, validates an unencrypted RSA PKCS#8 PEM, reserializes it canonically, and supplies only the whitespace-free base64 payload required by the JVM connector. Encrypted, RSA PKCS#1, empty, malformed, and non-RSA keys fail without exposing key material. The Python control connection independently converts the full PEM to DER PKCS#8 bytes.
+
+The seven Gold tables have explicit Snowflake types matching the Phase 6 contracts. Each run clears only its LANDING table, writes the validated Gold slice/snapshot, and verifies row counts, required keys, duplicate keys, and partition boundaries before ANALYTICS changes. At this transfer boundary, a null `FACT_TRIPS.IS_FINANCIAL_ADJUSTMENT` is normalized to `FALSE` because the Snowflake target is non-nullable; all source columns and non-null flag values remain unchanged. Fact and aggregate plans use `BEGIN`, partition-scoped `DELETE`, `INSERT ... SELECT`, and `COMMIT`; dimensions use the same transaction with deterministic full-snapshot deletion. Exceptions cause rollback. Configuration fails before loading unless LANDING, ANALYTICS, and AUDIT are three distinct schemas, preventing a target replacement from deleting its own landing source. Audits capture run/dataset/period/count/status/timestamps/error/reconciliation/idempotency fields. Reconciliation covers unique fact and dimension keys, both pickup/dropoff date/time/location relationships, source boundaries, and daily/location/hourly totals. The two-pass workflow requires one shared `run_id`, distinct pass numbers, stable counts, and no duplicate keys. Because LANDING tables are shared deterministic objects, the Databricks workflow must enforce a single concurrent Phase 7 run. Final live validation used Databricks job `957309293840081`, run `306537529517430`: all 17 tasks succeeded, both passes were stable, all 40 reconciliation checks passed, and critical integrity failures were zero.
 
 ## dbt models
 

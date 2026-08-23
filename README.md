@@ -18,7 +18,7 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phase 6 Gold processing is implemented and live-validated on Unity Catalog Serverless compute. All 4,090,836 valid Silver trips reconcile one-for-one to the Gold fact and to daily, pickup, dropoff, and hourly aggregates. Date, time, and location dimensions have verified unique keys and zero referential failures. Expected unknown passenger counts and financial adjustments remain visible as quality warnings. Unity Catalog continues to use the existing `ac-urbanflow` managed identity; no keys, SAS tokens, connection strings, passwords, or client secrets are used. Snowflake, ADF, dbt, and Power BI remain unimplemented.
+Phases 6 and 7 are complete and live-validated on Databricks Serverless compute. Phase 7 published all seven Gold contracts to Snowflake with two stable passes, complete reconciliation, and zero critical validation failures. No private key, password, Azure storage credential, or secret is stored in this repository. ADF, dbt, and Power BI remain unimplemented.
 
 ## Local acquisition
 
@@ -126,3 +126,35 @@ gold/fact_trips/        -> gold/agg_daily_trips/
 The fact retains the Silver `trip_id`, source-period partitions, Bronze/Silver lineage, and every valid trip. It adds date/time keys, duration, speed, fare-per-mile, tip percentage, Gold run lineage, and separate non-adjustment/financial-adjustment revenue measures. Invalid divisions produce null rather than zero, infinity, or NaN; null passenger counts remain unknown.
 
 Final Serverless validation produced 4,090,836 fact rows, 6,363 date rows, 1,440 minute rows, 265 location rows, 35 daily rows, 265 location-aggregate rows, and 748 hourly rows. Every aggregate reconciled to 4,090,836 trips, dimension referential failures and duplicate keys were zero, and repeated partition replacement retained stable fact cardinality. Quality is `WARNING` only for 955,371 null passenger counts and 14,953 financial-adjustment trips.
+
+## Snowflake integration (Phase 7 complete)
+
+The Phase 7 workflow transfers the seven existing Gold Delta contracts through the Databricks Serverless Snowflake Spark connector and Snowflake's internally managed transfer mechanism:
+
+```text
+Gold Delta -> URBANFLOW.LANDING -> validated transactional replacement
+           -> URBANFLOW.ANALYTICS -> URBANFLOW.AUDIT
+```
+
+`FACT_TRIPS` and the three aggregates replace only the requested `source_year` / `source_month`; the three dimensions use deterministic full snapshots. Every batch validates source/landing/target counts, keys, boundaries, fact relationships, aggregate trip totals, audits, and two-pass cardinality. Target changes use explicit Snowflake transactions, so a failed target update is rolled back rather than leaving a partial analytical slice.
+
+Nine ordered notebooks live under `notebooks/snowflake/`. Run `sql/snowflake/01_phase7_tables.sql` first, then configure Databricks-backed scope `urbanflow-snowflake`. The scope and seven key names are notebook widgets, so deployments can override the documented defaults. Data transfer uses the bundled Spark connector; the Snowflake Python connector is used only for validation, audit SQL, and transactional control. UrbanFlow validates the secret as an unencrypted RSA PKCS#8 PEM and converts it to the compact base64 payload expected by the Spark connector without logging the key.
+
+### One-time live configuration
+
+1. Run `sql/snowflake/01_phase7_tables.sql` in Snowflake as the existing loader-capable role.
+2. Create the Databricks-backed scope: `databricks secrets create-scope urbanflow-snowflake`.
+3. From your own PowerShell session, stream the existing multi-line PEM file directly to the CLI without displaying or copying it into the repository:
+
+   ```powershell
+   Get-Content -Raw -LiteralPath 'C:\Users\HS TRADER.urbanflow\secrets\urbanflow_snowflake_key.p8' | databricks secrets put-secret urbanflow-snowflake snowflake_private_key
+   ```
+
+4. Populate `snowflake_account`, `snowflake_user`, `snowflake_database`, `snowflake_schema`, `snowflake_warehouse`, and `snowflake_role` with `databricks secrets put-secret ... --string-value ...`. Use `ANALYTICS` for `snowflake_schema`; LANDING and AUDIT are non-secret validated object configuration.
+5. Configure the Serverless environment with `snowflake-connector-python>=3.16,<4` and enforce one concurrent Phase 7 run. Pass one shared `run_id` plus `idempotency_pass=1`, run notebooks 01-08, repeat loading/validation with `idempotency_pass=2` and the same `run_id`, then run notebook 09.
+
+The current UrbanFlow environment has completed these one-time prerequisites. Never paste the private key into chat, source code, a notebook, or command history.
+
+### Phase 7 validation result
+
+Databricks job `957309293840081`, run `306537529517430`, completed all 17 tasks successfully, including both landing passes and final idempotency validation. Snowflake reconciled 4,090,836 fact rows, 6,363 dates, 1,440 minutes, 265 locations, 35 daily aggregates, 265 location aggregates, and 748 hourly aggregates. Duplicate keys, fact foreign-key failures, partition-boundary failures, aggregate-total failures, audit failures, and reconciliation failures were all zero. Each dataset recorded two passes with one stable target count.

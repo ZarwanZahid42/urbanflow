@@ -130,3 +130,40 @@ This file records durable architectural and implementation decisions. Add a date
 
 - **Final validation:** Job `631815480020120`, runs `191548502476871` and `150700319211970`, completed all fourteen ordered Serverless tasks. Facts reconcile 4,090,836 to Silver; dimension counts are 6,363/1,440/265; aggregation counts are 35/265/748; every aggregation perspective reconciles to 4,090,836; critical quality metrics are zero; quality is `WARNING` for 955,371 unknown passenger counts and 14,953 adjustment trips. The local suite passes 62 tests.
 - **Security/operations:** Existing Unity Catalog managed-identity access was reused. No Azure infrastructure or secret material changed, and Serverless compute terminated automatically.
+
+
+### 2026-08-23 — Phase 7 Snowflake integration design and manual boundary
+
+- **Decision:** Use the Databricks Serverless Snowflake Spark connector and Snowflake-managed internal transfer staging from Gold Delta to `URBANFLOW.LANDING`.
+- **Reason:** This is the supported direct transfer path and avoids a second Azure data-access plane.
+- **Alternatives considered:** An ADLS external stage, Azure storage integration, SAS, storage keys, service principals, client secrets, and password authentication were rejected as unnecessary and outside the security/infra scope.
+- **Consequences:** Data transfer options are isolated and use `snowflake_jwt`; no Azure infrastructure changes are required. The private PEM stays outside the repository and is retrieved only from a configurable Databricks secret reference at runtime.
+
+- **Decision:** Validate in LANDING, then use explicit Snowflake DML transactions for target replacement.
+- **Reason:** LANDING isolates partial connector failures, while `BEGIN` / scoped `DELETE` / `INSERT` / `COMMIT` prevents partially replaced ANALYTICS data.
+- **Consequences:** Facts and aggregates replace only the configured source-year/month slice; dimensions replace complete validated snapshots. Blind append is not permitted. Uniqueness, null keys, boundaries, row counts, both pickup/dropoff dimension relationships, and aggregate trip totals are checked before completion.
+
+- **Decision:** Require two live passes with one shared `run_id` and distinct `idempotency_pass` values.
+- **Reason:** Equal post-load counts alone do not prove which executions were compared; explicit pass identity makes the evidence auditable.
+- **Consequences:** The final notebook requires two successful stable target counts for all seven datasets and rejects duplicate keys. Current Phase 6 counts are validation expectations only, never permanent load constants.
+
+- **Bootstrap state:** Database `URBANFLOW`; schemas `LANDING`, `ANALYTICS`, and `AUDIT`; warehouse `URBANFLOW_LOAD_WH`; loader/reader roles; and RSA-enabled service user `URBANFLOW_DATABRICKS_SVC` were created manually before local implementation. Repository code did not create or modify them.
+- **Manual boundary:** The analytical/landing/audit table DDL and Databricks-backed scope `urbanflow-snowflake` were created/populated manually. The existing private-key file was streamed directly from its out-of-repository path into secret `snowflake_private_key`; its contents did not enter chat, source, notebooks, logs, or Git.
+- **Completion status:** Superseded by the final 2026-08-24 live validation below.
+
+### 2026-08-24 — Spark connector private-key serialization
+
+- **Live evidence:** Databricks job `957309293840081`, run `841801582124941`, completed Snowflake DDL bootstrap and Python control-connection validation, then failed in `landing_first` before data transfer with `Input PEM private key is invalid` from the Spark connector's PKCS#8 parser.
+- **Root cause:** The Python connector accepts UrbanFlow's full PEM because the control path parses it and emits DER PKCS#8 bytes. The Spark connector base64-decodes `pem_private_key` directly into a `PKCS8EncodedKeySpec`, so passing the PEM envelope and line breaks is invalid.
+- **Decision:** Normalize actual and escaped newlines, validate an unencrypted RSA PKCS#8 PEM, canonically reserialize it, strip the PEM envelope and all payload whitespace, and pass only that payload to the Spark connector. Reject empty, encrypted, RSA PKCS#1, malformed, and non-RSA inputs without including key material in errors or output.
+- **Verification:** Synthetic-key authentication tests isolated the serialization behavior. This intermediate failure is superseded by the final successful validation below.
+
+### 2026-08-24 — Phase 7 final live validation
+
+- **Landing failure root cause:** Silver/Gold `is_financial_adjustment` used nullable Spark comparisons. If no known monetary value was negative but at least one optional monetary input was null, Spark three-valued boolean logic produced null. The live Gold fact contained 955,293 such rows, while Snowflake `FACT_TRIPS.IS_FINANCIAL_ADJUSTMENT` is non-nullable.
+- **Landing fix:** At the Snowflake landing boundary only, normalize null `is_financial_adjustment` to `FALSE`. Preserve all source columns and every non-null boolean value. A local regression test verifies that no other column receives a default.
+- **Transactional failure root cause:** The non-sensitive Databricks `snowflake_schema` setting resolved ANALYTICS to LANDING. The fact replacement therefore deleted the landing source before its `INSERT ... SELECT`, yielding zero inserted rows.
+- **Transactional fix:** Correct `snowflake_schema` to `ANALYTICS` and fail closed unless landing, analytics, and audit schema names are distinct. The stored private key and all credentials were not read, printed, or changed.
+- **Final evidence:** Databricks job `957309293840081`, run `306537529517430`, completed all 17 tasks successfully. Both landing passes and `idempotency_final` passed. Landing and target counts matched for 4,090,836 facts, 6,363 dates, 1,440 minutes, 265 locations, 35 daily aggregates, 265 location aggregates, and 748 hourly aggregates.
+- **Integrity evidence:** Duplicate-key, fact foreign-key, boundary, and aggregate-total failures were zero. All 40 reconciliation checks passed; the run recorded 14 successful loads and zero failed loads. Every dataset had two passes and one distinct target count.
+- **Verification:** The complete local suite passes 104 tests, Python compilation passes, and repository diff checks pass. Phase 7 is complete and ready for final review and commit.

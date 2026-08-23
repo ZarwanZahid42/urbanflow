@@ -58,7 +58,7 @@ Gold contains analytics-ready facts, dimensions, and aggregates. Models will sup
 
 ### Snowflake
 
-Snowflake is the analytical warehouse serving curated models. Gold data will be loaded incrementally into controlled schemas, with reconciliation and load-audit checks between lake and warehouse.
+Snowflake is the analytical warehouse serving the seven Phase 6 Gold contracts. Phase 7 uses the Databricks Serverless Snowflake Spark connector with key-pair authentication and Snowflake-managed internal transfer staging. Data first lands in `URBANFLOW.LANDING`, passes count/schema/key/boundary checks, and then replaces a bounded partition or dimension snapshot transactionally in `URBANFLOW.ANALYTICS`; operational evidence is written to `URBANFLOW.AUDIT`. The complete two-pass workflow is live-validated, including reconciliation and idempotency gates.
 
 ### dbt and SQL
 
@@ -182,3 +182,23 @@ Gold Delta
 The Gold fact has one row per valid Silver trip and preserves its deterministic key and Bronze/Silver lineage. Date and time foreign keys are derived from pickup/dropoff timestamps; location foreign keys reuse the validated TLC identifiers. Derived measures are guarded against zero, non-finite, and invalid denominators. Financial adjustment rows remain present and are exposed separately from non-adjustment revenue.
 
 Small dimensions use complete deterministic snapshot replacement. The fact and aggregates use exact source-year/month Delta partition replacement, allowing bounded retries without duplicating other batches. Live Serverless validation reconciled 4,090,836 Silver and Gold facts, all three aggregation perspectives, and every dimension relationship with zero critical failures.
+
+## Implemented Phase 7 Snowflake integration
+
+```text
+ADLS Gold Delta (managed-identity read)
+        |
+        | Databricks Serverless + bundled Snowflake Spark connector
+        | snowflake_jwt; private PEM retrieved from a Databricks secret scope
+        v
+URBANFLOW.LANDING
+        | schema, key, duplicate, boundary, and row-count gates
+        | BEGIN -> scoped DELETE -> INSERT -> COMMIT
+        v
+URBANFLOW.ANALYTICS
+        +--> URBANFLOW.AUDIT.LOAD_AUDIT
+```
+
+The connector uses Snowflake's internally managed transfer stage; UrbanFlow creates no external stage, Azure storage integration, SAS token, storage key, service principal, or additional Azure resource. `FACT_TRIPS`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS` replace only a configured source period. `DIM_DATE`, `DIM_TIME`, and `DIM_LOCATION` replace complete validated snapshots. LANDING can contain an incomplete failed transfer, but ANALYTICS remains unchanged unless validation passes and the transaction commits.
+
+The existing service user `URBANFLOW_DATABRICKS_SVC` authenticates with its configured RSA public key. The matching private key remains outside Git and is retrieved at runtime only through configurable secret references under the documented `urbanflow-snowflake` scope. Runtime validation also requires LANDING, ANALYTICS, and AUDIT to be distinct schemas. Databricks job `957309293840081`, run `306537529517430`, completed both passes and final idempotency validation: all seven landing and target counts matched, all 40 reconciliation checks passed, and critical integrity failures were zero.

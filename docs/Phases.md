@@ -1,6 +1,6 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-23):** Phase 6 Gold processing is implemented and live-validated on Unity Catalog Serverless compute. All 4,090,836 Silver trips reconcile to unique Gold facts and to daily, pickup, dropoff, and hourly aggregates with zero critical quality failures. Three dimensions have unique keys and zero referential failures; repeated partition replacement proves idempotency. Final quality is `WARNING` only for preserved unknown passenger counts and financial adjustments. Local validation passes 62 tests. Snowflake, ADF, dbt, and Power BI remain unimplemented.
+**Current phase status (2026-08-24):** Phases 1-6 are complete and committed. Phase 7 is complete and live-validated: all seven Gold datasets load through Databricks Serverless into Snowflake, both idempotency passes are stable, and every final reconciliation gate passes. Phase 7 changes remain unstaged and uncommitted pending review. ADF, dbt, and Power BI remain unimplemented.
 
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
@@ -64,11 +64,13 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 7. Snowflake integration
 
-- **Objective:** Publish curated lake data to the analytical warehouse.
-- **Major tasks:** Configure database, schemas, warehouse, roles, storage integration or approved transfer method; implement incremental loads and reconciliations.
-- **Expected deliverables:** Secure Snowflake landing/curated tables, load process, and audit results.
-- **Dependencies:** Phase 6 and Snowflake account access.
-- **Manual cloud work:** Yes—account, role, warehouse, integration, and network/security configuration require explicit approval.
+- **Status:** Complete—implemented locally, synchronized to Databricks, and live-validated through two full Snowflake passes.
+- **Objective:** Publish the seven live-validated Gold Delta datasets into governed Snowflake landing, analytical, and audit schemas.
+- **Implemented deliverables:** Explicit ANALYTICS/LANDING/AUDIT DDL; key-pair configuration contract; fail-closed RSA PKCS#8 normalization for the Spark connector; isolated Serverless connector options; nine ordered notebooks; validated landing gates; transactional period replacement for facts/aggregates; deterministic dimension snapshots; count, uniqueness, boundary, referential, and aggregate reconciliation; failure audits; and two-pass idempotency validation.
+- **Loading boundary:** Data transfer uses Snowflake's internally managed staging through the Spark connector. No Azure storage integration, external ADLS stage, SAS token, storage key, password, service principal, client secret, or new Azure resource is introduced.
+- **Dependencies:** Completed Phase 6; existing `URBANFLOW` objects, loader/reader roles, warehouse, and RSA-configured service user; a Databricks Serverless environment with `snowflake-connector-python`; and the documented secret scope.
+- **Manual cloud work:** Completed for the current scope: Snowflake objects/grants and Databricks-backed scope `urbanflow-snowflake` are configured. The non-sensitive `snowflake_schema` setting was corrected to `ANALYTICS`; the stored private key and all credentials were left unchanged.
+- **Validation:** Databricks job `957309293840081`, run `306537529517430`, completed all 17 tasks. Landing and target counts match for all seven datasets: 4,090,836 facts, 6,363 dates, 1,440 minutes, 265 locations, 35 daily aggregates, 265 location aggregates, and 748 hourly aggregates. Duplicate keys, fact foreign-key failures, source-boundary failures, aggregate-total failures, audit failures, and all 40 reconciliation failures are zero. Both passes produced one stable target count for every dataset; `idempotency_final` passed. The completion gate was satisfied live on 2026-08-24.
 
 ## 8. dbt transformations/tests
 

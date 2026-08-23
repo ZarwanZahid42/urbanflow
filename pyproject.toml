@@ -15,6 +15,7 @@ dependencies = [
     "azure-storage-file-datalake>=12.17,<13",
     "python-dotenv>=1.0,<2",
     "requests>=2.32,<3",
+    "snowflake-connector-python>=3.16,<4",
 ]
 
 [project.optional-dependencies]
