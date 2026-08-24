@@ -59,7 +59,7 @@ Snowflake is the analytical warehouse serving the seven Phase 6 Gold contracts. 
 
 ### dbt and SQL
 
-Phase 8 uses dbt Core after `URBANFLOW.ANALYTICS`. Source group `urbanflow_analytics` declares all seven governed relations, and seven staging views expose their complete contracts with lower-case column names and no filtering, aggregation, or business-rule changes. The aggregate source names `agg_daily`, `agg_location`, and `agg_hourly` map through `identifier` to the physical Phase 7 `*_TRIPS` tables. One ephemeral `int_trip_enriched` model resolves pickup/drop-off roles across date, minute, and location dimensions. Four deterministic mart views expose trip detail and the governed daily, hourly, and location grains for BI. Contract-backed generic and singular tests cover keys, joins, relationships, governed day parts, and count rules; freshness remains unset because no authoritative warehouse SLA exists. The full layer parses locally, but live Snowflake execution and generated documentation remain pending manual access approval.
+Phase 8 uses dbt Core after `URBANFLOW.ANALYTICS`. Source group `urbanflow_analytics` declares all seven governed relations, and seven staging views expose their complete contracts with lower-case column names and no filtering, aggregation, or business-rule changes. The aggregate source names `agg_daily`, `agg_location`, and `agg_hourly` map through `identifier` to the physical Phase 7 `*_TRIPS` tables. One ephemeral `int_trip_enriched` model resolves pickup/drop-off roles across date, minute, and location dimensions. Four deterministic mart views expose trip detail and the governed daily, hourly, and location grains for BI. Contract-backed generic and singular tests cover keys, joins, relationships, governed day parts, and count rules; freshness remains unset because no authoritative warehouse SLA exists. The layer is live-validated in `URBANFLOW.DBT_DEV`: 11 views were created, 95 tests passed, all Phase 7 row counts and aggregate measures reconciled, and dbt documentation generation succeeded.
 
 ### Power BI
 
@@ -201,7 +201,7 @@ The connector uses Snowflake's internally managed transfer stage; UrbanFlow crea
 
 The existing service user `URBANFLOW_DATABRICKS_SVC` authenticates with its configured RSA public key. The matching private key remains outside Git and is retrieved at runtime only through configurable secret references under the documented `urbanflow-snowflake` scope. Runtime validation also requires LANDING, ANALYTICS, and AUDIT to be distinct schemas. Databricks job `957309293840081`, run `306537529517430`, completed both passes and final idempotency validation: all seven landing and target counts matched, all 40 reconciliation checks passed, and critical integrity failures were zero.
 
-## Locally implemented Phase 8 dbt boundary
+## Live-validated Phase 8 dbt boundary
 
 ```text
 URBANFLOW.ANALYTICS (Phase 7 governed source contract)
@@ -226,4 +226,4 @@ downstream analytics / future Power BI
 
 Phase 8 owns warehouse presentation logic that is genuinely downstream or consumer-specific. Databricks continues to own source standardization, record validity, conformance, deduplication, Gold facts/dimensions/aggregates, and Delta incrementality. Phase 7 continues to own Snowflake landing, ANALYTICS replacement, audits, reconciliation, and idempotency. dbt must not duplicate those transformations without a documented reason or alter validated upstream data to satisfy a test.
 
-Snowflake database/schema access, role permissions, warehouse usage, and authentication are manual prerequisites if the existing access is insufficient. The eventual dbt target schema and least-privilege role must be selected explicitly; this design does not invent either. `profiles.yml` and sensitive values remain external or ignored, with environment-variable or approved secret-manager resolution. Generated `target/`, logs, downloaded packages, and documentation outputs remain untracked. All source, staging, intermediate, mart, test, and documentation definitions parse offline; no live Snowflake dbt execution or generated catalog is claimed.
+Snowflake database/schema access, role permissions, warehouse usage, and authentication remain externally managed prerequisites. The controlled validation used the explicitly prepared `URBANFLOW.DBT_DEV` target, configured `SECURITYADMIN` role, and `COMPUTE_WH`; it did not switch roles or modify grants. `profiles.yml`, the private key, and sensitive values remained outside the repository. Generated `target/`, logs, downloaded packages, and documentation outputs remained outside the repository or ignored. Query-history validation found zero ANALYTICS mutation queries during the validation window.

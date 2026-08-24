@@ -1,6 +1,6 @@
 # UrbanFlow Technical Design
 
-This document describes implemented and live-validated Phases 2-7 and the complete local Phase 8 dbt implementation. Live dbt execution, orchestration, BI, and later phases remain pending unless explicitly marked implemented.
+This document describes implemented and live-validated Phases 2-8. Orchestration, BI, and later phases remain pending unless explicitly marked implemented.
 
 ## Source data ingestion
 
@@ -77,11 +77,11 @@ The seven Gold tables have explicit Snowflake types matching the Phase 6 contrac
 
 ## Phase 8 dbt design
 
-Phase 8 is fully implemented locally under `dbt/`. Its only upstream business-data contract is
+Phase 8 is fully implemented and live-validated under `dbt/`. Its only upstream business-data contract is
 the seven committed Phase 7 tables in `URBANFLOW.ANALYTICS`: `FACT_TRIPS`, `DIM_DATE`,
 `DIM_TIME`, `DIM_LOCATION`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and
 `AGG_HOURLY_TRIPS`. LANDING remains a transient transfer boundary and AUDIT remains operational
-evidence; neither is a dbt presentation source. No live dbt connection or execution is claimed.
+evidence; neither is a dbt presentation source. Live execution publishes only to `URBANFLOW.DBT_DEV`.
 
 ### Implemented layering and lineage
 
@@ -135,10 +135,10 @@ because Phase 7 defines no authoritative actionable freshness SLA or loaded-at c
 ### Documentation and materialization artifacts
 
 Source/model YAML and the layer READMEs document purpose, grain, keys, important measures,
-materialization, ownership, and lineage. Offline `dbt parse` produces the complete lineage
-manifest in a disposable directory. The first approved live workflow will run `dbt docs generate`
-and inspect the rendered catalog. Generated `target/`, `logs/`, `dbt_packages/`, and rendered
-documentation remain untracked.
+materialization, ownership, and lineage. Offline and live parsing produce the complete lineage
+manifest in disposable directories. Controlled `dbt docs generate` produced and validated the
+catalog, manifest, and rendered index outside the repository. Generated `target/`, `logs/`,
+`dbt_packages/`, and rendered documentation remain untracked.
 
 ### Environment, credentials, and permissions
 
@@ -150,13 +150,23 @@ connector 4.x compatibility before changing it. The dbt project and profile are 
 `urbanflow`. `profiles.yml.example` reads only `DBT_SNOWFLAKE_*`, `DBT_TARGET_SCHEMA`, and
 `DBT_THREADS`; a populated `profiles.yml` remains external or ignored.
 
-Manual Snowflake work is still required before live validation: select the target schema and
-least-privilege execution role, approve database and warehouse usage, grant read access to
-ANALYTICS and the required target-schema relation privileges, confirm key-pair authentication,
-and provide environment values plus the private-key path externally. No exact grants, role,
-account identifier, credential, or private-key content is assumed or accessed. Phase 8 does not
-change Phase 7 tables, grants, Azure resources, or Databricks resources. Later Phase 11 CI/CD will
-reuse the same externalized profile contract.
+The user completed the manual Snowflake prerequisites before live validation: the `DBT_DEV`
+schema, configured `SECURITYADMIN` role boundary, warehouse/database/source usage, target view
+creation, key-pair association, and external environment/profile configuration. The connected
+session confirmed `SECURITYADMIN`, `COMPUTE_WH`, `URBANFLOW`, and `DBT_DEV`. Codex did not change
+roles or grants, and a read-only query-history check found zero ANALYTICS mutation queries during
+the validation window. Phase 8 does not change Phase 7 tables, Azure resources, or Databricks
+resources. Later Phase 11 CI/CD will reuse the same externalized profile contract.
+
+### Live validation evidence
+
+`dbt debug` and parse succeeded with 7 sources, 12 models, and 95 tests. `dbt build` completed
+106/106 resources in 30.95 seconds: 11 view models succeeded and 95 tests passed with no warnings,
+errors, or skips. The standalone test run also passed 95/95. Snowflake contained exactly seven
+staging and four mart views in `DBT_DEV`; the intermediate remained ephemeral. All seven staging
+counts and all four mart counts matched Phase 7, and exact daily, hourly, and location measure
+mismatch counts were zero. Documentation generation described all 12 models and all 7 sources.
+
 ## Data quality
 
 Checks will operate at the earliest useful layer:

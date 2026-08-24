@@ -18,7 +18,7 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phases 6 and 7 are complete and live-validated on Databricks Serverless compute. Phase 7 published all seven Gold contracts to Snowflake with two stable passes, complete reconciliation, and zero critical validation failures. Phase 8 is locally implemented: seven ANALYTICS sources feed seven staging views, one ephemeral trip-enrichment model, and four BI-facing mart views with generic, singular, and static architecture tests. Offline parsing is complete; approved least-privilege setup and the first live Snowflake dbt build remain manual and have not occurred. No private key, password, Azure storage credential, or secret is stored in this repository. ADF and Power BI remain unimplemented.
+Phases 6-8 are complete and live-validated. Phase 7 published all seven Gold contracts to Snowflake with two stable passes, complete reconciliation, and zero critical validation failures. Phase 8 now reads those governed ANALYTICS contracts into seven staging views, one ephemeral trip-enrichment model, and four BI-facing mart views in `URBANFLOW.DBT_DEV`. The live dbt build created 11 views and passed all 95 tests; row counts and aggregate measures reconcile exactly to Phase 7, and dbt documentation generation succeeded. ANALYTICS remained read-only. No private key, password, Azure storage credential, or secret is stored in this repository. ADF and Power BI remain unimplemented.
 
 ## Local acquisition
 

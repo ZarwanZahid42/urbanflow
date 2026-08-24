@@ -107,7 +107,7 @@ Phase 7 is complete in commit `ea0f67f`. Databricks Serverless job `957309293840
 
 This validated Snowflake contract is the upstream boundary for Phase 8. dbt must consume ANALYTICS without replacing the Databricks Silver/Gold transformations, the Phase 7 loading workflow, or the governed LANDING/ANALYTICS/AUDIT tables.
 
-## Locally implemented Phase 8 dbt milestone
+## Completed Phase 8 dbt milestone
 
 The complete local Phase 8 implementation now includes the constrained dbt Core project, safe
 externalized profile contract, seven ANALYTICS sources, seven conservative staging views, one
@@ -127,10 +127,10 @@ conformed descriptive attributes. dbt does not recalculate Gold measures, filter
 adjustments, mutate ANALYTICS, or duplicate Phase 7 audits, partition checks, reconciliation, and
 idempotency. No freshness test is invented because no actionable warehouse freshness SLA exists.
 
-Local/offline success means dependency compatibility, `dbt parse`, manifest lineage inspection,
-Python tests and compilation, dependency health, diff checks, and security/artifact scans pass
-without a Snowflake connection. Full live Phase 8 validation remains pending: a human must approve
-the target schema and least-privilege dbt role, provide external key-pair configuration, run the
-first `dbt debug`/`dbt build`/documentation generation against Snowflake, and reconcile results to
-the Phase 7 evidence. Generated artifacts remain untracked, and no credential or role/account
-detail is invented by this implementation.
+Phase 8 passed both local and controlled live validation. With external key-pair configuration and
+the manually prepared `URBANFLOW.DBT_DEV` boundary, `dbt debug`, parse, build, standalone tests,
+live relation checks, Phase 7 reconciliation, and documentation generation succeeded. The build
+created 11 views and passed 95/95 tests; staging and mart counts reconciled exactly, and daily,
+hourly, and location measures had zero mismatches. Generated artifacts, the external profile, and
+the private key remain outside the repository. ANALYTICS was read-only and later phases were not
+started.
