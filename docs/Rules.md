@@ -88,16 +88,32 @@
 - Generate and review dbt lineage/documentation, but do not commit generated `target/`, `logs/`, package directories, or local profile artifacts.
 - Snowflake grants, warehouse usage, authentication, environment setup, and any cloud changes require explicit manual acknowledgement and least privilege.
 
-## Documentation
+## Documentation and portfolio accuracy
 
-- Keep architecture, setup, operational steps, schemas, and decisions aligned with implementation.
+- Keep architecture, setup, operational steps, schemas, metrics, phase status, and decisions aligned with implementation and live evidence.
 - Update `Memory.md` when an architectural or consequential implementation decision is made.
-- Never claim that a planned feature is implemented.
+- Never claim that a planned, evaluated, or partially prepared feature is implemented, deployed, scheduled, or validated.
+- Never fabricate cloud identifiers, resources, permissions, execution histories, screenshots, counts, or test results.
+- Label production-oriented design separately from continuously operating production deployment.
+- Preserve the implemented Python → ADLS Gen2 → Databricks → Snowflake → dbt architecture as the primary project narrative.
+- Treat Azure Data Factory, Power BI, CI/CD deployment, infrastructure automation, centralized monitoring, and downstream weather enrichment as deferred until both repository implementation and validation evidence exist.
+- Phase 9 is a completed scope review with ADF deferred. Do not resume ADF or create ADF resources automatically.
+- Do not start Phase 10 without explicit user instruction.
+
+## Validated contract preservation
+
+- Preserve immutable source objects and Bronze source-fidelity behavior.
+- Preserve the `source_year` / `source_month` retry boundary and exact partition-replacement semantics.
+- Preserve deterministic trip keys, structured rejection evidence, and retained financial-adjustment/null-passenger semantics.
+- Preserve Snowflake LANDING validation, transactional ANALYTICS replacement, AUDIT evidence, reconciliation, and two-pass idempotency.
+- Preserve `URBANFLOW.ANALYTICS` as the governed read-only dbt source and `URBANFLOW.DBT_DEV` as the separate dbt target.
+- Do not change a validated upstream contract merely to make documentation, a downstream model, or a test easier.
+- Re-run affected tests and reconciliation checks whenever a contract intentionally changes.
 
 ## Git conventions
 
 - Use focused branches and small, coherent commits with imperative messages.
-- Do not commit generated artifacts, local data, secrets, or environment-specific state.
+- Do not commit generated artifacts, local data, raw datasets, private keys, populated profiles, secrets, or environment-specific state.`r`n- Never commit dbt `target/`, `logs/`, `dbt_packages/`, or generated documentation output.
 - Review diffs and ensure tests pass before opening or merging a pull request.
 - Commit at meaningful phase milestones rather than committing incomplete scaffolding by default.
 

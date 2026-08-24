@@ -2,135 +2,140 @@
 
 ## Product definition
 
-UrbanFlow is a real-world data engineering platform that combines NYC Taxi and Limousine Commission (TLC) trip records with a second real source, planned to be historical or observed weather data. It will produce reliable, analytics-ready mobility data through an Azure-only, production-style data platform.
+UrbanFlow is an end-to-end cloud data engineering platform for public NYC taxi mobility analytics. It converts bounded NYC TLC source files into traceable Delta Lake and Snowflake contracts, then exposes tested analytical views through dbt.
+
+The delivered product is a production-oriented portfolio implementation, live-validated through Phase 8. It is not a continuously scheduled production service and does not claim an enterprise SLA, automated cloud provisioning, Azure Data Factory, or a deployed BI dashboard.
 
 ## Business problem
 
-NYC trip records are large, time-varying, and not directly suited to consistent business analysis. Mobility demand is also influenced by time, location, service type, and external conditions such as weather. Analysts need a governed and repeatable way to ingest these sources, standardize them, validate their quality, and expose trusted measures without rebuilding data preparation logic for each question.
+NYC trip records are high-volume, time-varying, and contain provider-submitted anomalies. They are not directly suited to consistent analytical use. Reviewers and downstream analysts need a reproducible process that preserves the source, applies explicit validity rules, publishes stable facts/dimensions/aggregates, proves boundary counts, and makes retries safe.
 
-## Objectives
+## Product goals
 
-- Ingest real TLC and weather data reproducibly and incrementally.
-- Preserve source data while creating validated, conformed datasets.
-- Build an auditable Bronze, Silver, and Gold data lifecycle.
-- Publish a dimensional analytics model to Snowflake.
-- Apply dbt transformations, documentation, and tests in the warehouse.
-- Orchestrate and monitor pipelines with Azure Data Factory.
-- Deliver Power BI-ready datasets for mobility analysis.
-- Demonstrate production-minded engineering practices in a portfolio project.
+- Acquire real public TLC data reproducibly for an explicit source period.
+- Preserve immutable source records and end-to-end lineage.
+- Implement a Bronze, Silver, and Gold Delta lifecycle on Azure Databricks.
+- Make invalid data, quality warnings, and audit outcomes visible.
+- Support bounded, idempotent reprocessing without duplicate accumulation.
+- Publish governed Gold contracts transactionally to Snowflake.
+- Use dbt for downstream SQL modeling, tests, lineage, and documentation.
+- Demonstrate secure credential boundaries and automated local validation.
+- Present all implemented and deferred capabilities accurately for portfolio review.
 
 ## Target users
 
-- Transportation and city-planning analysts
-- Operations and mobility analysts
-- Business intelligence developers
-- Data engineers and platform reviewers
-- Hiring teams evaluating the portfolio implementation
+- Data engineers and analytics engineers reviewing architecture and implementation.
+- Mobility, operations, and city-planning analysts consuming curated contracts.
+- BI developers building a future semantic/reporting layer.
+- Recruiters and interviewers assessing a practical data engineering portfolio.
 
-## Major use cases
+## Implemented use cases
 
-- Analyze trip volume, revenue, distance, duration, and passenger trends.
-- Compare demand by pickup/drop-off zone, date, hour, and service type.
-- Evaluate the relationship between weather conditions and trip demand.
-- Identify data-quality trends, rejected records, and pipeline health.
-- Refresh Power BI reports from governed warehouse models.
-- Reprocess a bounded period safely when source data or logic changes.
+- Analyze validated trip volume, distance, duration, passenger, and monetary measures.
+- Compare mobility by pickup/drop-off date, minute/hour, and taxi zone.
+- Query daily, hourly, and location aggregate grains.
+- Inspect quality anomalies, rejected-row rules, and pipeline audit evidence.
+- Reprocess one source month safely and verify stable cardinality.
+- Reconcile Delta, Snowflake, and dbt boundaries.
 
-## Functional requirements
+Weather-impact analysis and a published Power BI experience are not implemented use cases.
 
-1. Acquire published NYC TLC trip files and data from a selected real weather provider.
-2. Land immutable source data in ADLS Gen2 with source and ingestion metadata.
-3. Maintain Bronze Delta tables that preserve source fidelity.
-4. Transform Bronze data into typed, standardized, deduplicated Silver tables.
-5. Produce Gold facts, dimensions, and aggregate datasets.
-6. Load curated data into Snowflake incrementally.
-7. Use dbt for warehouse transformations, tests, lineage, and documentation.
-8. Orchestrate dependencies, retries, and parameterized runs through Azure Data Factory.
-9. Record run-level audit metrics, including row counts, timestamps, and status.
-10. Surface failures and data-quality results for operational review.
-11. Expose stable datasets for Power BI analytics.
+## Implemented functional requirements
 
-## Non-functional requirements
+1. Acquire one configurable official TLC Yellow Taxi monthly Parquet file and the official taxi-zone CSV.
+2. Optionally acquire NOAA/NCEI observations when an external API token is supplied; skip safely otherwise.
+3. Publish local and ADLS files with temporary staging, verification, atomic rename, and audit events.
+4. Authenticate to ADLS with `DefaultAzureCredential` and use managed-identity-backed Unity Catalog access in Databricks.
+5. Preserve source rows in Bronze Delta and add file, run, ingestion-time, and source-period metadata.
+6. Apply explicit Silver schemas, deterministic trip keys, reference-driven location validation, and structured rejected-row handling.
+7. Publish a Gold fact, date/time/location dimensions, and daily/hourly/location aggregates with guarded derived measures.
+8. Replace facts and aggregates by `source_year` / `source_month` and rebuild small reference dimensions deterministically.
+9. Load seven Gold contracts through Snowflake `LANDING` and transactionally publish validated data to `ANALYTICS`.
+10. Record load and reconciliation evidence in Snowflake `AUDIT` and prove two-pass idempotency.
+11. Treat the seven `ANALYTICS` relations as read-only dbt sources and publish tested views only to `DBT_DEV`.
+12. Generate dbt lineage and documentation without committing generated artifacts.
+13. Provide PySpark-free local unit and contract tests for deterministic implementation behavior.
 
-- **Reliability:** Retries and restartable steps must handle transient failures.
-- **Idempotency:** Re-running the same partition or batch must not duplicate results.
-- **Scalability:** Storage and processing must support multi-month and multi-year TLC volumes.
-- **Security:** Secrets must use environment variables locally and managed secret services in cloud environments.
-- **Observability:** Every run must be traceable through logs, status, counts, and timestamps.
-- **Maintainability:** Code, configuration, schemas, and documentation must be modular and versioned.
-- **Data quality:** Critical fields and relationships must be tested at appropriate layers.
-- **Cost awareness:** Compute must be right-sized, bounded, and stopped when unused.
-- **Reproducibility:** Environments and deployments must be defined through version-controlled configuration.
+## Implemented non-functional requirements
+
+- **Reliability:** temporary publication, Delta ACID writes, Snowflake transactions, fail-closed configuration, and bounded retries where implemented.
+- **Idempotency:** exact source-period replacement and deterministic snapshot rebuilding; no blind append at retry-sensitive boundaries.
+- **Data quality:** schema, required-field, invalid-value, duplicate, relationship, aggregate, and dbt contract checks with warning/failure semantics.
+- **Reconciliation:** source, valid, rejected, Gold, landing, target, and mart counts plus important aggregate measures reconcile.
+- **Security:** credentials and private keys remain external; Azure storage access uses identity; no storage key, SAS, password, PAT, or connection string is committed.
+- **Traceability:** run IDs, timestamps, source files, source periods, schema fingerprints, counts, status, and sanitized errors are retained where appropriate.
+- **Maintainability:** transformations, I/O, configuration, tests, SQL contracts, and documentation are modular and versioned.
+- **Cost awareness:** live processing used bounded Databricks Serverless jobs and one bounded monthly dataset; continuous cloud execution is not claimed.
+- **Reproducibility:** local Python setup and commands are documented; cloud execution requires pre-existing resources and approved external configuration.
 
 ## Data sources
 
-- **Primary:** Public NYC TLC trip record data and TLC taxi-zone reference data.
-- **Secondary:** A real weather source selected during the acquisition phase; no synthetic substitute will be used for production flows.
-- Source licenses, retention expectations, schemas, and access constraints will be recorded before ingestion is implemented.
+- **Primary:** public NYC TLC Yellow Taxi trip records.
+- **Reference:** public NYC TLC Taxi Zone Lookup.
+- **Optional acquisition:** NOAA/NCEI Climate Data Online daily observations.
 
-## Expected outputs
+The live analytical validation used May 2026 Yellow Taxi data and the taxi-zone reference. NOAA weather is not joined into Bronze, Silver, Gold, Snowflake, or dbt models.
 
-- Raw source files and Bronze Delta tables in ADLS Gen2
-- Validated Silver trip, zone, and weather datasets
-- Gold dimensional models and mobility aggregates
-- Snowflake analytics tables and dbt models
-- Data-quality results and pipeline audit metadata
-- Azure Data Factory orchestration definitions
-- Power BI semantic model and dashboard
-- Architecture, operations, lineage, and portfolio documentation
+## Implemented outputs
 
-## Success criteria
+### Lakehouse
 
-- Real TLC and weather data flow end to end without manual record manipulation.
-- Scheduled incremental runs are repeatable and do not create duplicates.
-- Bronze records are traceable to their source and ingestion run.
-- Silver and Gold datasets pass documented quality thresholds.
-- Snowflake and dbt models reconcile with upstream Gold outputs.
-- Failed runs are observable and can be safely retried.
-- Power BI answers the defined mobility and weather use cases.
-- CI validates code, tests, and configuration before integration.
-- The final repository accurately documents the implemented system and does not claim unbuilt features.
+- Immutable TLC trip and taxi-zone source objects in ADLS Gen2.
+- Bronze Delta: Yellow Taxi and taxi-zone datasets plus pipeline/quality audits.
+- Silver Delta: `fact_trips`, `dim_taxi_zones`, rejected trips/zones, and audits.
+- Gold Delta: `fact_trips`, three dimensions, three aggregates, and audits.
 
-## Phase 2 acquisition scope
+### Snowflake
 
-The implemented local acquisition layer uses three real-data categories:
+```text
+URBANFLOW
+├── LANDING
+├── ANALYTICS
+└── AUDIT
+```
 
-- one configurable monthly Yellow Taxi Parquet file from the [official NYC TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page);
-- the official TLC Taxi Zone Lookup Table in CSV format; and
-- optional daily weather observations from the [NOAA/NCEI Climate Data Online API v2](https://www.ncei.noaa.gov/cdo-web/webservices/v2).
+Seven Gold contracts are present in `ANALYTICS` after validation. `AUDIT` stores load and reconciliation evidence. `LANDING` isolates transfer and validation from target publication.
 
-The development default is May 2026, the latest Yellow Taxi month listed when Phase 2 was implemented. Month and taxi type remain configuration-driven to support later incremental ingestion. NOAA live acquisition requires a manually obtained API token; without one, weather is explicitly skipped. Phase 2 stores local Bronze-oriented source files and JSON Lines audit events only. It does not implement cloud landing, Medallion transformations, orchestration, warehouse loading, or analytics.
+### dbt
 
-## Completed Phase 7 warehouse contract
+- 7 governed sources.
+- 7 staging views.
+- 1 ephemeral intermediate model (`int_trip_enriched`).
+- 4 analytical mart views.
+- 95 generic/singular tests and generated documentation/lineage.
 
-Phase 7 is complete in commit `ea0f67f`. Databricks Serverless job `957309293840081`, successful run `306537529517430`, loaded the seven Phase 6 Gold contracts through `URBANFLOW.LANDING` into governed `URBANFLOW.ANALYTICS` tables and recorded operational evidence in `URBANFLOW.AUDIT`. Both landing passes and final idempotency validation succeeded. The warehouse contains 4,090,836 facts, 6,363 dates, 1,440 minutes, 265 locations, and 35/265/748 daily/location/hourly aggregate rows; duplicate keys, fact relationship failures, partition-boundary failures, aggregate reconciliation failures, audit failures, and all 40 reconciliation failures are zero.
+## Acceptance evidence
 
-This validated Snowflake contract is the upstream boundary for Phase 8. dbt must consume ANALYTICS without replacing the Databricks Silver/Gold transformations, the Phase 7 loading workflow, or the governed LANDING/ANALYTICS/AUDIT tables.
+- 4,090,836 trip rows retained and reconciled from Bronze through the dbt trip-detail mart.
+- 265 taxi-zone/location rows.
+- 6,363 date rows and 1,440 time rows.
+- 35 daily, 748 hourly, and 265 location aggregate rows.
+- Phase 7: two stable loading passes, 40 reconciliation checks passed, and zero critical validation failures.
+- Phase 8: 7 sources, 12 models, 95 tests, 11 views, and 106/106 build resources completed.
+- Standalone dbt tests: 95/95 passed.
+- Current complete local test suite: 125 pytest tests passed.
+- Python compilation, dependency, whitespace, secret/artifact, and ignored-data checks passed.
+- Query-history validation found no Phase 8 mutations to `URBANFLOW.ANALYTICS`.
 
-## Completed Phase 8 dbt milestone
+## Deferred and future requirements
 
-The complete local Phase 8 implementation now includes the constrained dbt Core project, safe
-externalized profile contract, seven ANALYTICS sources, seven conservative staging views, one
-ephemeral trip-enrichment model, four BI-facing mart views, focused generic/singular tests, static
-architecture tests, and synchronized repository documentation.
+The following are outside the delivered product and must not be described as implemented:
 
-The implemented presentation contracts are:
+1. Azure Data Factory or another centralized cloud orchestration/scheduling layer.
+2. Power BI semantic model, dashboard, workspace publication, and refresh schedule.
+3. Continuous monitoring, alert destinations, operational SLAs, and production runbooks.
+4. CI/CD validation and cloud deployment workflows.
+5. Automated cloud infrastructure provisioning and environment promotion.
+6. Weather enrichment in downstream analytical models.
+7. Multi-period performance tuning, workload scaling evidence, and production cost controls.
 
-- `mart_trip_details`, at one validated trip per row, for detailed service, payment, passenger,
-  duration, distance, revenue, and pickup/drop-off analysis;
-- `mart_daily_mobility`, at source year/month and pickup-date grain;
-- `mart_hourly_mobility`, at source year/month, pickup-date, and hour grain; and
-- `mart_location_mobility`, at source year/month and TLC-location grain.
+Phase 9 finalized this scope decision: ADF was evaluated and intentionally deferred because it would add orchestration infrastructure and recurring cloud-operation scope without materially expanding the core data-engineering capabilities already validated. No ADF resource or run exists. Phase 10 has not started.
 
-The aggregate marts reuse Phase 7's authoritative daily, hourly, and location measures and add
-conformed descriptive attributes. dbt does not recalculate Gold measures, filter financial
-adjustments, mutate ANALYTICS, or duplicate Phase 7 audits, partition checks, reconciliation, and
-idempotency. No freshness test is invented because no actionable warehouse freshness SLA exists.
+## Product constraints
 
-Phase 8 passed both local and controlled live validation. With external key-pair configuration and
-the manually prepared `URBANFLOW.DBT_DEV` boundary, `dbt debug`, parse, build, standalone tests,
-live relation checks, Phase 7 reconciliation, and documentation generation succeeded. The build
-created 11 views and passed 95/95 tests; staging and mart counts reconciled exactly, and daily,
-hourly, and location measures had zero mismatches. Generated artifacts, the external profile, and
-the private key remain outside the repository. ANALYTICS was read-only and later phases were not
-started.
+- Use real public data; never present synthetic fixtures as production evidence.
+- Preserve raw data and validated pipeline semantics.
+- Do not weaken data-quality checks or modify governed source data to make downstream tests pass.
+- Keep `ANALYTICS` and `DBT_DEV` conceptually and operationally separate.
+- Do not fabricate cloud IDs, deployed services, schedules, validation runs, or result metrics.
+- Do not expose or commit credentials, private keys, populated profiles, local data, logs, or generated artifacts.

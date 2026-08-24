@@ -1,160 +1,292 @@
 # UrbanFlow
 
-UrbanFlow is a portfolio data engineering platform for analyzing New York City mobility patterns from real NYC Taxi and Limousine Commission (TLC) trip records and a planned real weather source. The project is designed to demonstrate a production-style, end-to-end analytics workflow without using synthetic production data.
+**An end-to-end cloud data engineering platform for NYC taxi mobility analytics.**
 
-## Planned architecture
+UrbanFlow processes public New York City Taxi & Limousine Commission (TLC) data through a production-oriented lakehouse and warehouse architecture. It demonstrates reproducible acquisition, identity-based Azure storage access, Databricks and Delta Lake Medallion processing, transactional Snowflake loading, dbt modeling and testing, and evidence-driven reconciliation.
 
-Real data sources → Azure Data Factory → Azure Data Lake Storage Gen2 → Bronze → Azure Databricks/PySpark and Delta Lake → Silver → Gold → Snowflake → dbt/SQL → Power BI
+The project is complete and live-validated through its dbt analytics layer. It is a portfolio implementation—not a continuously scheduled production service—and it does not claim unimplemented orchestration, BI, CI/CD, or infrastructure automation.
 
-UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud platform; AWS is not part of the design.
+## Overview
 
-## Technology stack
+NYC TLC trip files are large, externally produced, and contain real-world quality anomalies. UrbanFlow turns one bounded monthly source period into traceable, analytics-ready datasets while preserving the original records and proving that each material boundary reconciles.
 
-- Python, SQL, PySpark, and Delta Lake
-- Microsoft Azure, ADLS Gen2, Azure Data Factory, and Azure Databricks
-- Snowflake and dbt
-- GitHub Actions and Docker
-- Power BI
+Key engineering outcomes:
 
-## Current status
+- **4,090,836** Yellow Taxi trips processed from immutable source data to Snowflake and dbt.
+- Bronze, Silver, and Gold Delta layers live-validated on Databricks Serverless with Unity Catalog.
+- Deterministic trip keys, explicit schemas, structured rejection handling, and source lineage.
+- Month-scoped replacement instead of blind append, with two-pass idempotency evidence.
+- Transactional Snowflake loading across `LANDING`, `ANALYTICS`, and `AUDIT` schemas.
+- A live-validated dbt project with **7 sources, 12 models, 95 tests, and 11 views**.
+- **125 local pytest tests** plus Python compilation, dependency, whitespace, and artifact checks.
 
-Phases 6-8 are complete and live-validated. Phase 7 published all seven Gold contracts to Snowflake with two stable passes, complete reconciliation, and zero critical validation failures. Phase 8 now reads those governed ANALYTICS contracts into seven staging views, one ephemeral trip-enrichment model, and four BI-facing mart views in `URBANFLOW.DBT_DEV`. The live dbt build created 11 views and passed all 95 tests; row counts and aggregate measures reconcile exactly to Phase 7, and dbt documentation generation succeeded. ANALYTICS remained read-only. No private key, password, Azure storage credential, or secret is stored in this repository. ADF and Power BI remain unimplemented.
+## Architecture
 
-## Local acquisition
+```mermaid
+flowchart LR
+    A[NYC TLC public data] --> B[Python acquisition]
+    B --> C[Immutable raw files]
+    C --> D[Azure Data Lake Storage Gen2]
+    D --> E[Bronze Delta]
+    E --> F[Silver Delta]
+    F --> G[Gold Delta]
+    G --> H[Snowflake LANDING]
+    H --> I[Snowflake ANALYTICS]
+    H --> J[Snowflake AUDIT]
+    I --> K[dbt Core]
+    K --> L[DBT_DEV analytical views]
+    L --> M[Analytics / BI consumption]
+```
 
-Official sources: [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and [NOAA/NCEI Climate Data Online API v2](https://www.ncei.noaa.gov/cdo-web/webservices/v2).
+| Component | Implemented responsibility |
+|---|---|
+| Python acquisition | Downloads official TLC monthly Parquet and taxi-zone reference data with bounded streaming, atomic local publication, retry-safe behavior, and JSONL audit records. |
+| ADLS Gen2 | Stores immutable raw objects and the Delta lake using Microsoft Entra identity through `DefaultAzureCredential`; no storage keys or SAS tokens are used. |
+| Databricks + Delta Lake | Runs PySpark Bronze, Silver, and Gold workloads on Serverless compute with Unity Catalog access, ACID writes, schema controls, audit data, and bounded partition replacement. |
+| Snowflake | Receives seven Gold contracts through `LANDING`, validates them, transactionally publishes them to `ANALYTICS`, and records load/reconciliation evidence in `AUDIT`. |
+| dbt Core | Treats `ANALYTICS` as a read-only source and publishes tested staging and mart views to the separate `DBT_DEV` schema. |
 
-From the project root, activate `.venv` and run:
+For detailed system boundaries and trust transitions, see [docs/Architecture.md](docs/Architecture.md). Engineering decisions and physical contracts are documented in [docs/Design.md](docs/Design.md).
+
+## Technology Stack
+
+| Area | Technologies actually used |
+|---|---|
+| Languages | Python, SQL, PySpark |
+| Cloud and storage | Microsoft Azure, Azure Data Lake Storage Gen2, Microsoft Entra ID, Azure Identity |
+| Lakehouse | Azure Databricks Serverless, Unity Catalog, Delta Lake |
+| Warehouse | Snowflake, Snowflake Spark connector, Snowflake Python connector |
+| Analytics engineering | dbt Core, dbt-snowflake |
+| Quality and development | pytest, Git, GitHub, PowerShell, Python virtual environments |
+
+Azure Data Factory, Power BI, GitHub Actions, Docker, and infrastructure-as-code are **not** implemented components of the current project.
+
+## Data Sources
+
+- **Primary:** [NYC TLC Yellow Taxi Trip Records](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page), processed for May 2026 during live validation.
+- **Reference:** the official TLC Taxi Zone Lookup table.
+- **Optional acquisition only:** NOAA/NCEI Climate Data Online observations. The client is implemented and token-gated, but weather is not part of the validated Bronze-to-dbt analytical model.
+
+All project inputs are public datasets. UrbanFlow does not use private customer, patient, or production business data.
+
+## End-to-End Data Flow
+
+1. The Python acquisition layer constructs official source URLs, downloads to temporary files, and atomically renames completed files into local Bronze-oriented paths.
+2. The ADLS uploader authenticates with `DefaultAzureCredential`, stages uploads in chunks, verifies size, and atomically renames them into immutable raw lake paths.
+3. Bronze notebooks preserve source columns and add file, ingestion, run, and source-period metadata. Quality anomalies are reported without changing source records.
+4. Silver applies explicit types, deterministic deduplication, reference-driven location validation, and structured multi-rule rejection while preserving lineage.
+5. Gold retains one row per valid trip, adds conformed date/time/location dimensions and guarded analytical measures, and produces daily, hourly, and location aggregates.
+6. Databricks writes the seven validated Gold contracts to Snowflake `LANDING`; validation gates run before transactional replacement in `ANALYTICS`.
+7. dbt reads `ANALYTICS`, builds thin staging interfaces and BI-oriented marts in `DBT_DEV`, executes 95 tests, and generates lineage/documentation artifacts outside the repository.
+
+## Medallion Architecture
+
+### Bronze — source fidelity and traceability
+
+- Preserves the raw/near-raw TLC representation; quality findings do not filter or correct records.
+- Records Unity Catalog-supported source metadata from `_metadata.file_path` plus UTC ingestion time and run ID.
+- Replaces only the requested Yellow Taxi source-year/source-month partition; taxi zones use a small unpartitioned snapshot.
+- Writes structured pipeline and quality audit evidence.
+
+### Silver — conformance and explicit validity
+
+- Produces typed, snake-case `fact_trips` and `dim_taxi_zones` contracts.
+- Creates deterministic SHA-256 `trip_id` values because the TLC source has no stable trip identifier.
+- Checks chronology, required values, finite numeric values, location references, and duplicates.
+- Retains rejected records with all failed rules and the original uncast Bronze record as JSON; no record is silently discarded.
+- Preserves finite negative monetary values as identified financial adjustments and null passenger counts as analytically unknown.
+
+### Gold — analytical facts, dimensions, and aggregates
+
+- Publishes `fact_trips` at one valid Silver trip per row.
+- Builds `dim_date`, `dim_time`, and `dim_location` with deterministic keys.
+- Adds guarded duration, speed, fare-per-mile, and tip-percentage calculations that cannot emit infinity or NaN.
+- Publishes governed daily, hourly, and location aggregate contracts.
+
+The separation keeps recovery and source evidence independent from business validity and analytical presentation.
+
+## Snowflake Warehouse
+
+```text
+URBANFLOW
+├── LANDING    temporary validated transfer boundary
+├── ANALYTICS  seven governed fact/dimension/aggregate tables
+└── AUDIT      load and reconciliation evidence
+```
+
+Databricks transfers the Gold Delta contracts with key-pair authentication and the Snowflake Spark connector's internally managed staging. Facts and aggregates replace only the requested `source_year` / `source_month`; dimensions use deterministic full snapshots. Each target change runs inside an explicit transaction (`BEGIN`, scoped `DELETE`, `INSERT`, `COMMIT`) and rolls back on failure.
+
+The completed two-pass workflow validated source, landing, and target counts; keys; boundaries; all pickup/drop-off dimension relationships; aggregate totals; and audit completeness. It did not create an ADLS external stage or introduce Azure storage credentials.
+## dbt Transformation Layer
+
+`URBANFLOW.ANALYTICS` is the governed, read-only upstream source. `URBANFLOW.DBT_DEV` is the separate development target for dbt-created relations.
+
+```text
+7 ANALYTICS sources
+    └── 7 stg_* views
+          ├── int_trip_enriched (ephemeral)
+          │     └── mart_trip_details (view)
+          └── governed aggregate staging views
+                ├── mart_daily_mobility (view)
+                ├── mart_hourly_mobility (view)
+                └── mart_location_mobility (view)
+```
+
+The seven sources are `fact_trips`, `dim_date`, `dim_time`, `dim_location`, `agg_daily`, `agg_location`, and `agg_hourly`. Staging models expose explicit lower-case contracts without changing grain or measures. `int_trip_enriched` centralizes six pickup/drop-off role-playing dimension joins and remains ephemeral to avoid persisting another 4.09-million-row fact copy. Aggregate marts add descriptive attributes while reusing the authoritative Phase 7 measures.
+
+Controlled validation completed `dbt debug`, `dbt parse`, `dbt build`, standalone `dbt test`, live relation validation, Phase 7 reconciliation, and `dbt docs generate`. See [dbt/README.md](dbt/README.md) for safe external configuration.
+
+## Data Quality & Reliability
+
+UrbanFlow makes quality observable at the earliest useful layer:
+
+- acquisition checks HTTP/file behavior and records completed, skipped, and failed attempts;
+- Bronze validates required schema, non-empty input, persisted counts, partitions, and report-only source anomalies;
+- Silver validates types, required fields, chronology, numeric validity, deterministic duplicates, and taxi-zone relationships, with structured quarantine;
+- Gold validates keys, dimensions, derived metrics, fact cardinality, and all aggregate perspectives;
+- Snowflake validates landing schemas, counts, keys, source boundaries, relationships, transactions, audits, and two-pass idempotency;
+- dbt tests nullability, uniqueness, accepted values, relationships, row preservation, mart keys, and focused business rules.
+
+Warnings deliberately distinguish real-source observations from pipeline failures. The validated TLC batch retained negative financial adjustments and unknown passenger counts rather than manufacturing cleaner data by discarding them.
+
+### Idempotency and reconciliation
+
+The recovery boundary is the source period: `source_year` and `source_month`. Reprocessing a month replaces that bounded Delta/Snowflake slice instead of appending duplicates. Small reference dimensions are rebuilt as deterministic snapshots.
+
+Idempotency was exercised with repeated Databricks writes and two complete Snowflake loading passes sharing one run identifier. Every dataset produced one stable target count. Forty Phase 7 reconciliation checks passed, and dbt staging/mart counts plus daily, hourly, and location measures matched their governed sources with zero differences.
+
+## Security
+
+- Azure access uses `DefaultAzureCredential` locally and managed-identity-backed Unity Catalog storage access in Databricks.
+- Snowflake uses RSA key-pair authentication; the private key is stored outside the repository and supplied through approved external runtime configuration.
+- dbt uses an external `profiles.yml` and environment variables; no repository-local populated profile is required or tracked.
+- `ANALYTICS` and `DBT_DEV` remain separate, and the Phase 8 query-history check found zero mutations to `ANALYTICS`.
+- No storage keys, SAS tokens, passwords, PATs, connection strings, populated `.env` files, private keys, or raw datasets are committed.
+- Generated dbt targets, logs, packages, and documentation artifacts are ignored or generated outside the repository.
+
+This is a portfolio security design with validated secret-handling boundaries; it is not presented as a complete enterprise IAM or governance implementation.
+
+## Validation & Results
+
+### Live cloud evidence
+
+| Contract | Validated rows/results |
+|---|---:|
+| Trip fact / trip-detail mart | 4,090,836 |
+| Date dimension | 6,363 |
+| Time dimension (minute grain) | 1,440 |
+| Location dimension | 265 |
+| Daily aggregate | 35 |
+| Hourly aggregate | 748 |
+| Location aggregate | 265 |
+| Phase 7 reconciliation checks | 40 passed, 0 failed |
+| dbt sources / models / tests | 7 / 12 / 95 |
+| dbt target relations | 11 views in `DBT_DEV`; 1 intermediate model ephemeral |
+| dbt build | 106/106 resources completed |
+| Standalone dbt tests | 95/95 passed |
+
+Bronze preserved **4,090,836 of 4,090,836** trip rows and **265 of 265** taxi-zone rows. Silver produced the same valid counts with zero rejected rows for the validated period. Gold and Snowflake reconciled all fact, dimension, and aggregate contracts. The final dbt layer matched Phase 7 counts and aggregate measures exactly.
+
+The repository's complete local suite currently passes **125 pytest tests**. Python compilation checks, `pip check`, `git diff --check`, secret/artifact scans, and exclusions for raw data and generated dbt files also passed during final validation.
+
+## Project Phases
+
+| Phase | Outcome | Status |
+|---:|---|---|
+| 1 | Repository foundation, requirements, engineering rules, and architecture | Complete |
+| 2 | Real TLC/taxi-zone acquisition plus optional NOAA client | Complete |
+| 3 | Identity-authenticated ADLS Gen2 upload and live object verification | Complete |
+| 4 | Databricks Bronze Delta, metadata, audit, and observational quality | Complete and live-validated |
+| 5 | Silver conformance, deterministic keys, quarantine, and reconciliation | Complete and live-validated |
+| 6 | Gold fact, dimensions, aggregates, quality, and idempotency | Complete and live-validated |
+| 7 | Transactional Snowflake loading, audit, reconciliation, and two-pass validation | Complete and live-validated |
+| 8 | dbt sources, staging, intermediate, marts, tests, docs, and reconciliation | Complete and live-validated |
+| 9 | Productionization review and scope finalization | Deferred / scope finalized |
+
+Azure Data Factory was evaluated as a potential orchestration layer and intentionally deferred. The core portfolio objective is already demonstrated through Python, ADLS Gen2, Databricks, Snowflake, and dbt; ADF would currently add deployment, permissions, and recurring cloud-operation scope without materially expanding the demonstrated transformation, reliability, or analytical-modeling capabilities. UrbanFlow therefore makes no claim that an ADF factory, pipeline, or trigger exists.
+
+## Repository Structure
+
+```text
+urbanflow/
+├── src/
+│   ├── ingestion/          # TLC/NOAA acquisition and local audit logic
+│   └── azure_storage/      # Identity-based ADLS upload client
+├── notebooks/
+│   ├── bronze/             # Source-preserving Delta ingestion
+│   ├── silver/             # Typed facts, zones, and rejection handling
+│   ├── gold/               # Facts, dimensions, aggregates, and quality
+│   ├── snowflake/          # Landing, transactional load, audit, reconciliation
+│   └── utilities/          # Reusable PySpark/Snowflake contracts
+├── sql/snowflake/          # Explicit Phase 7 warehouse DDL
+├── dbt/                    # Sources, staging, intermediate, marts, tests, docs
+├── tests/                  # PySpark-free unit and contract tests
+├── docs/                   # Architecture, design, requirements, rules, decisions
+├── data/                   # Ignored local runtime data; only a marker is tracked
+├── .env.example            # Blank/safe configuration contract
+└── pyproject.toml          # Python package and test configuration
+```
+
+## Getting Started
+
+### Local development
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+pytest -q
+```
+
+Use `.env.example` as the configuration reference. Keep populated values in process environment variables or an ignored local `.env`; never commit credentials.
+
+Acquire public data for the configured month:
 
 ```powershell
 python -m src.ingestion.run_ingestion --source tlc
 python -m src.ingestion.run_ingestion --source taxi-zones
+# Optional and token-gated:
 python -m src.ingestion.run_ingestion --source weather
-python -m src.ingestion.run_ingestion --source all
 ```
 
-Configure the month and source settings through environment variables listed in `.env.example`. Existing files are skipped unless `--force` is supplied. Downloads stream to `.part` files and are renamed only after success.
-
-Local raw outputs are ignored by Git:
-
-- `data/bronze/tlc/{taxi_type}/year=YYYY/month=MM/source.parquet`
-- `data/bronze/reference/taxi_zones/taxi_zone_lookup.csv`
-- `data/bronze/weather/year=YYYY/month=MM/observations.json`
-- `data/audit/ingestion_audit.jsonl`
-
-Weather ingestion is optional. Without `NOAA_API_TOKEN`, `weather` and the weather portion of `all` are recorded as skipped without making a NOAA request. Obtaining a NOAA API token is a later manual prerequisite.
-
-## ADLS Gen2 upload
-
-The Azure uploader uses `DefaultAzureCredential`, which reuses the current Microsoft Entra/Azure CLI identity during local development. It never uses storage account keys or connection strings.
+After Azure CLI authentication and approval to use the existing ADLS resources:
 
 ```powershell
-python -m src.azure_storage.uploader --source tlc
-python -m src.azure_storage.uploader --source taxi-zones
-python -m src.azure_storage.uploader --source weather
 python -m src.azure_storage.uploader --source all
 ```
 
-The default command uploads all available files for the configured month. Missing weather is skipped. Existing remote files with the same size are skipped, while size conflicts require explicit review and `--overwrite`.
+Existing same-size remote files are skipped; conflicts require deliberate `--overwrite`. Runtime outputs under `data/` are ignored.
 
-Implemented cloud layout:
+### Validated cloud components
 
-```text
-urbanflow/
-└── bronze/
-    ├── tlc/yellow/year=2026/month=05/source.parquet
-    └── reference/taxi_zones/taxi_zone_lookup.csv
+The Databricks, Snowflake, and dbt workflows require pre-existing external resources, permissions, and secret configuration. This repository contains notebooks, SQL, models, tests, and safe examples; it does **not** automatically provision the validated cloud environment.
+
+For dbt, provide the eight `DBT_*` variables documented in `.env.example`, keep the populated profile outside the repository, select `DBT_DEV`, and run from `dbt/` only after Snowflake access is approved:
+
+```powershell
+dbt debug
+dbt parse
+dbt build
+dbt test
+dbt docs generate
 ```
 
-Uploads use bounded chunks and a temporary remote file. The final path appears only after staged size verification and atomic rename. Upload outcomes are stored locally in `data/audit/azure_upload_audit.jsonl`.
+Do not target or mutate `URBANFLOW.ANALYTICS` with dbt. Detailed prerequisites and phase evidence are in [docs/Phases.md](docs/Phases.md) and [dbt/README.md](dbt/README.md).
 
-See [`docs/Phases.md`](docs/Phases.md) for the implementation roadmap and [`docs/Architecture.md`](docs/Architecture.md) for the intended architecture.
+## Future Enhancements
 
-## Databricks Bronze processing
+The following are deliberately deferred and are not part of the implemented architecture:
 
-Phase 4 source notebooks are under `notebooks/bronze/`; reusable, locally testable contracts are under `notebooks/utilities/`. They run in Azure Databricks and intentionally do not add PySpark to the local environment.
+1. Azure Data Factory or another cloud-native orchestration/scheduling layer.
+2. Power BI semantic model and portfolio dashboard.
+3. Centralized operational telemetry, alerting, and runbooks.
+4. CI/CD validation and controlled cloud deployment.
+5. Automated, environment-specific cloud infrastructure provisioning.
+6. Weather enrichment in Silver, Gold, Snowflake, and dbt models.
+7. Production workload tuning, freshness SLAs, and cost monitoring.
 
-```text
-immutable raw ADLS objects                 processed Bronze Delta
-bronze/tlc/yellow/year=2026/month=05/  ->  bronze/delta/yellow_taxi/
-bronze/reference/taxi_zones/           ->  bronze/delta/taxi_zones/
-                                            audit/bronze_pipeline/
-                                            audit/bronze_quality/
-```
+## Project Status
 
-Yellow Taxi retries replace only the requested `_urbanflow_source_year` / `_urbanflow_source_month` partition. Taxi zones are a small unpartitioned snapshot and use full replacement. Neither path overwrites the raw source objects. Quality checks report anomalies without filtering or correcting source records. See `docs/Design.md` for thresholds and `docs/Phases.md` for the Databricks workspace setup and validation status.
+**Core platform complete through Phase 8; Phase 9 scope finalized with ADF deferred.**
 
-### Phase 4 validation result
-
-The final Serverless validation reconciled 4,090,836 Yellow Taxi raw rows to 4,090,836 Delta rows and 265 taxi-zone raw rows to 265 Delta rows. Yellow Taxi is partitioned by `_urbanflow_source_year` and `_urbanflow_source_month`; taxi zones are unpartitioned. Two successful Yellow Taxi ingestion audits prove the retry retained stable cardinality.
-
-Bronze quality status is `WARNING`, as expected for preserved real TLC data: 14,231 rows have negative fare amounts and 14,877 have negative total amounts. Duplicate, invalid-timestamp, negative-passenger, and all requested null counts are zero. These findings are reported without removing or modifying Bronze records.
-
-## Silver processing
-
-Phase 5 transforms Bronze Delta into explicitly typed, snake-case Silver Delta datasets:
-
-```text
-bronze/delta/yellow_taxi/  ->  silver/fact_trips/
-                              silver/rejected/trips/
-bronze/delta/taxi_zones/   ->  silver/dim_taxi_zones/
-                              silver/rejected/taxi_zones/
-                              audit/silver_pipeline/
-                              audit/silver_quality/
-```
-
-Trips use deterministic SHA-256 fingerprints over standardized business columns and exact year/month partition replacement. Taxi zones use unpartitioned snapshot replacement. Rejected rows retain structured rule arrays and an uncast Bronze JSON payload; no record is silently discarded.
-
-Final Serverless validation reconciled all 4,090,836 Bronze trips to 4,090,836 valid Silver rows and all 265 Bronze zones to 265 valid dimension rows. Two fact runs produced stable counts, zero duplicate trip IDs, and zero pickup/dropoff referential failures. Quality is `WARNING`: 955,371 passenger counts are unknown, 14,231 fare amounts are negative, and 14,877 total amounts are negative. Those finite monetary values are retained as financial adjustments rather than assumed invalid.
-
-## Gold processing
-
-Phase 6 publishes Delta facts, dimensions, aggregates, and structured audit outputs:
-
-```text
-silver/fact_trips/      -> gold/fact_trips/
-                           gold/dim_date/
-                           gold/dim_time/
-silver/dim_taxi_zones/ -> gold/dim_location/
-gold/fact_trips/        -> gold/agg_daily_trips/
-                           gold/agg_location_trips/
-                           gold/agg_hourly_trips/
-                           audit/gold_pipeline/
-                           audit/gold_quality/
-```
-
-The fact retains the Silver `trip_id`, source-period partitions, Bronze/Silver lineage, and every valid trip. It adds date/time keys, duration, speed, fare-per-mile, tip percentage, Gold run lineage, and separate non-adjustment/financial-adjustment revenue measures. Invalid divisions produce null rather than zero, infinity, or NaN; null passenger counts remain unknown.
-
-Final Serverless validation produced 4,090,836 fact rows, 6,363 date rows, 1,440 minute rows, 265 location rows, 35 daily rows, 265 location-aggregate rows, and 748 hourly rows. Every aggregate reconciled to 4,090,836 trips, dimension referential failures and duplicate keys were zero, and repeated partition replacement retained stable fact cardinality. Quality is `WARNING` only for 955,371 null passenger counts and 14,953 financial-adjustment trips.
-
-## Snowflake integration (Phase 7 complete)
-
-The Phase 7 workflow transfers the seven existing Gold Delta contracts through the Databricks Serverless Snowflake Spark connector and Snowflake's internally managed transfer mechanism:
-
-```text
-Gold Delta -> URBANFLOW.LANDING -> validated transactional replacement
-           -> URBANFLOW.ANALYTICS -> URBANFLOW.AUDIT
-```
-
-`FACT_TRIPS` and the three aggregates replace only the requested `source_year` / `source_month`; the three dimensions use deterministic full snapshots. Every batch validates source/landing/target counts, keys, boundaries, fact relationships, aggregate trip totals, audits, and two-pass cardinality. Target changes use explicit Snowflake transactions, so a failed target update is rolled back rather than leaving a partial analytical slice.
-
-Nine ordered notebooks live under `notebooks/snowflake/`. Run `sql/snowflake/01_phase7_tables.sql` first, then configure Databricks-backed scope `urbanflow-snowflake`. The scope and seven key names are notebook widgets, so deployments can override the documented defaults. Data transfer uses the bundled Spark connector; the Snowflake Python connector is used only for validation, audit SQL, and transactional control. UrbanFlow validates the secret as an unencrypted RSA PKCS#8 PEM and converts it to the compact base64 payload expected by the Spark connector without logging the key.
-
-### One-time live configuration
-
-1. Run `sql/snowflake/01_phase7_tables.sql` in Snowflake as the existing loader-capable role.
-2. Create the Databricks-backed scope: `databricks secrets create-scope urbanflow-snowflake`.
-3. From your own PowerShell session, stream the existing multi-line PEM file directly to the CLI without displaying or copying it into the repository:
-
-   ```powershell
-   Get-Content -Raw -LiteralPath 'C:\Users\HS TRADER.urbanflow\secrets\urbanflow_snowflake_key.p8' | databricks secrets put-secret urbanflow-snowflake snowflake_private_key
-   ```
-
-4. Populate `snowflake_account`, `snowflake_user`, `snowflake_database`, `snowflake_schema`, `snowflake_warehouse`, and `snowflake_role` with `databricks secrets put-secret ... --string-value ...`. Use `ANALYTICS` for `snowflake_schema`; LANDING and AUDIT are non-secret validated object configuration.
-5. Configure the Serverless environment with `snowflake-connector-python>=3.16,<4` and enforce one concurrent Phase 7 run. Pass one shared `run_id` plus `idempotency_pass=1`, run notebooks 01-08, repeat loading/validation with `idempotency_pass=2` and the same `run_id`, then run notebook 09.
-
-The current UrbanFlow environment has completed these one-time prerequisites. Never paste the private key into chat, source code, a notebook, or command history.
-
-### Phase 7 validation result
-
-Databricks job `957309293840081`, run `306537529517430`, completed all 17 tasks successfully, including both landing passes and final idempotency validation. Snowflake reconciled 4,090,836 fact rows, 6,363 dates, 1,440 minutes, 265 locations, 35 daily aggregates, 265 location aggregates, and 748 hourly aggregates. Duplicate keys, fact foreign-key failures, partition-boundary failures, aggregate-total failures, audit failures, and reconciliation failures were all zero. Each dataset recorded two passes with one stable target count.
+UrbanFlow has been validated end to end from public source acquisition through ADLS, Databricks Medallion layers, Snowflake, and dbt. Phase 10 has not started. No future service should be described as implemented until repository and live evidence exist.

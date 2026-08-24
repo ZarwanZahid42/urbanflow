@@ -9,13 +9,13 @@ This file records durable architectural and implementation decisions. Add a date
 | Project name: UrbanFlow | Accepted | Establishes a consistent project identity. |
 | Azure-only cloud strategy | Accepted | Microsoft Azure is the required cloud platform; AWS is excluded unless scope changes explicitly. |
 | NYC TLC as the primary real data source | Accepted | Provides public, real, high-volume NYC mobility records. |
-| Weather data as the planned secondary source | Accepted | Enables analysis of external conditions against mobility; the provider remains to be selected. |
+| NOAA weather acquisition | Optional / bounded | A token-gated client exists, but weather is not part of the validated analytical model. |
 | Medallion Architecture | Accepted | Separates raw fidelity, validated data, and analytics-ready models. |
 | ADLS Gen2 as the data lake | Accepted | Provides the durable Azure-native landing and lake storage layer. |
 | Databricks as the processing engine | Accepted | Supports scalable PySpark and Delta Lake transformations. |
 | Snowflake as the analytical warehouse | Accepted | Hosts curated analytical models for downstream consumption. |
 | dbt for warehouse transformations and testing | Accepted | Provides modular SQL, tests, lineage, and documentation. |
-| Azure Data Factory for orchestration | Accepted | Coordinates ingestion and downstream pipeline dependencies in Azure. |
+| Azure Data Factory orchestration | Deferred | Evaluated during Phase 9; no ADF resource or pipeline is implemented. Resume only on explicit user instruction. |
 
 ## Decision log
 
@@ -215,3 +215,14 @@ This file records durable architectural and implementation decisions. Add a date
 - **Live relation evidence:** `DBT_DEV` contains exactly 11 views: seven `STG_*` views and four `MART_*` views. `int_trip_enriched` remains ephemeral and did not create a relation. `MART_TRIP_DETAILS` contains 4,090,836 rows; the daily/hourly/location marts contain 35/748/265 rows.
 - **Phase 7 reconciliation:** All seven staging counts and all four mart counts matched their governed ANALYTICS sources with zero differences. Exact daily, hourly, and location measure mismatch counts were zero. Phase 7 counts remain 4,090,836 facts, 6,363 dates, 1,440 minutes, 265 locations, and 35/265/748 daily/location/hourly aggregates.
 - **Documentation and safety:** `dbt docs generate` produced `manifest.json`, `catalog.json`, and `index.html` outside the repository; all 12 models and 7 sources are described. A live two-hour query-history audit found zero ANALYTICS mutation queries. No Azure infrastructure, Snowflake privilege, role, upstream relation, secret, repository-local profile, or generated dbt artifact was changed.
+
+### 2026-08-24 — Phase 9 productionization review and scope finalization
+
+- **Status:** UrbanFlow's core portfolio implementation is complete through Phase 8. Phase 9 concluded as a productionization/scope review; Phase 10 has not started.
+- **Decision:** Keep the implemented architecture as Python acquisition → ADLS Gen2 → Databricks/Delta Bronze, Silver, and Gold → Snowflake LANDING/ANALYTICS/AUDIT → dbt → DBT_DEV analytical views.
+- **ADF decision:** Azure Data Factory was evaluated and intentionally deferred. It is not an implemented UrbanFlow technology, and no factory, pipeline, linked service, trigger, managed-identity assignment, deployment, or successful ADF run should be claimed.
+- **Reason:** Python, ADLS Gen2, Databricks, Snowflake, and dbt already demonstrate the intended data-engineering capabilities. ADF would currently add orchestration infrastructure, permissions, deployment configuration, and recurring cloud-operation scope without materially expanding the validated transformations, quality, idempotency, reconciliation, or analytical modeling.
+- **Future-session guardrail:** Do not automatically resume ADF work or create ADF/Azure resources. Do so only after a new explicit user request and do not fabricate cloud identifiers or validation evidence.
+- **Deferred capabilities:** Central orchestration/scheduling, Power BI, alerting, CI/CD deployment, automated infrastructure provisioning, and analytical weather enrichment remain future work.
+- **Portfolio evidence:** Final documentation may state 4,090,836 trip rows, 6,363 dates, 1,440 minutes, 265 locations, 35/748/265 daily/hourly/location aggregate rows, 7 dbt sources, 12 models, 95 tests, 11 DBT_DEV views, 106/106 dbt build resources, 95/95 standalone dbt tests, and 125 passing local pytest tests.
+- **Security boundary:** Preserve external credentials/profiles, the ANALYTICS/DBT_DEV separation, source-period idempotency, reconciliation evidence, and the rule that no unimplemented cloud service is presented as deployed.

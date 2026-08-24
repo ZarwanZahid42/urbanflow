@@ -1,8 +1,8 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-24):** Phases 1-8 are complete and live-validated. Phase 7 commit `ea0f67f` contains the governed Snowflake source contract. Phase 8 completed controlled execution with the approved external profile and `URBANFLOW.DBT_DEV` boundary: `dbt debug`, parse, build, standalone tests, live relation validation, Phase 7 reconciliation, and documentation generation all passed. The build created 11 views, kept the intermediate model ephemeral, and passed 95/95 tests. ADF and Power BI remain unimplemented.
+**Current phase status (2026-08-24):** Phases 1-8 are complete and live-validated. Phase 9 concluded as a productionization review with Azure Data Factory intentionally deferred; Phase 10 has not started. Phase 7 commit `ea0f67f` contains the governed Snowflake source contract. Phase 8 completed `dbt debug`, parse, build, standalone tests, live relation validation, Phase 7 reconciliation, and documentation generation against the separate `URBANFLOW.DBT_DEV` target. The build created 11 views, kept the intermediate model ephemeral, and passed 95/95 tests. Power BI and all later productionization items remain unimplemented.
 
-The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
+The roadmap preserves completed implementation history and labels all post-Phase-9 items as future work. Every external change remains explicit and controlled.
 
 ## 1. Project foundation
 
@@ -85,13 +85,14 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 - **Live reconciliation:** `DBT_DEV` contains exactly the seven staging and four mart views; `int_trip_enriched` remains ephemeral. All seven staging row counts and all four mart row counts match Phase 7, including 4,090,836 trip details and 35/748/265 daily/hourly/location rows. Exact daily, hourly, and location measure mismatches are zero. Generated catalog, manifest, and documentation index were written outside the repository.
 - **Dependencies:** Completed Phase 7 commit `ea0f67f`; Python 3.11+; the constrained dbt 1.9/Snowflake adapter line; Snowflake network/account access; and manually approved least-privilege access to the existing database, warehouse, ANALYTICS sources, and selected target schema.
 - **Manual cloud work:** Completed for this validation by the user: `URBANFLOW.DBT_DEV`, key-pair authentication, and the required source-read/target-create boundary were prepared externally. Validation used `SECURITYADMIN` and `COMPUTE_WH` exactly as configured; Codex did not change roles or privileges. No write privilege or mutation was applied to ANALYTICS. dbt Cloud remains optional and requires explicit selection.
-## 9. Azure Data Factory orchestration
+## 9. Productionization review and scope finalization
 
-- **Objective:** Coordinate the end-to-end incremental workflow.
-- **Major tasks:** Create parameterized linked services, datasets, pipelines, triggers, dependencies, retries, and notifications; invoke Databricks and warehouse/dbt steps through approved patterns.
-- **Expected deliverables:** Deployable ADF definitions and a successful orchestrated run.
-- **Dependencies:** Phases 4-8.
-- **Manual cloud work:** Yes—ADF resources, connections, managed identities, triggers, and deployment permissions require explicit approval.
+- **Status:** Deferred / scope finalized.
+- **Objective:** Review whether another cloud orchestration layer materially improves the completed portfolio and record the productionization boundary accurately.
+- **Decision:** Azure Data Factory was evaluated as a possible coordinator for acquisition, Databricks, Snowflake, and dbt, but was intentionally deferred.
+- **Rationale:** The validated Python → ADLS Gen2 → Databricks → Snowflake → dbt path already demonstrates ingestion, distributed processing, data quality, idempotency, reconciliation, transactional loading, and analytical modeling. ADF would currently add infrastructure, permissions, deployment configuration, and recurring cloud-operation scope without materially expanding those demonstrated capabilities.
+- **Evidence boundary:** No ADF factory, linked service, dataset, pipeline, trigger, identity assignment, deployment, or orchestrated run is implemented or claimed.
+- **Future rule:** Resume ADF only on explicit user instruction. Do not create or infer cloud resource identifiers.
 
 ## 10. Data quality and monitoring
 

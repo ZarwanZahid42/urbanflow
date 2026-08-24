@@ -1,77 +1,79 @@
 # UrbanFlow Architecture
 
-## Intended data flow
+## Implemented end-to-end flow
 
 ```text
-Real TLC data
-      |
-      v
-Azure / ADLS Gen2: immutable sources and Bronze storage
-      |
-      v
-Databricks / Delta: Bronze -> Silver -> Gold
-      |
-      v
-Snowflake: LANDING -> validated ANALYTICS (+ AUDIT evidence)
-      |
-      v
-dbt Core: sources -> staging -> intermediate -> marts (implemented locally)
-      |
-      v
-Downstream analytics / Power BI (future)
+NYC TLC public data
+        |
+        v
+Python acquisition
+        |
+        v
+immutable raw files in ADLS Gen2
+        |
+        v
+Databricks / Delta Lake: Bronze -> Silver -> Gold
+        |
+        v
+Snowflake: LANDING -> ANALYTICS + AUDIT
+        |
+        v
+dbt Core: sources -> staging -> intermediate -> marts
+        |
+        v
+URBANFLOW.DBT_DEV analytical views
+        |
+        v
+analytics / future BI consumption
 ```
 
-Azure Data Factory remains the planned orchestration layer around this flow; it does not own transformation logic. The platform uses Medallion Architecture to separate source preservation, validated data, and business-ready analytics. Microsoft Azure is the only cloud platform in scope. **AWS is not part of UrbanFlow's architecture or implementation.**
+This is the primary, implemented architecture. It is production-oriented and live-validated through Phase 8, but it is not a continuously scheduled production deployment. Microsoft Azure is the only cloud platform in scope; AWS is not part of UrbanFlow.
 
 ## Component responsibilities
 
-### Real data sources
+### Public source data
 
-NYC TLC supplies trip records and taxi-zone reference data. A real weather provider will supply observations needed to analyze weather-related mobility patterns. Source contracts, access methods, and update cadence will be documented before implementation.
+NYC TLC supplies the validated Yellow Taxi monthly Parquet file and taxi-zone reference CSV. An optional NOAA/NCEI client is implemented for local acquisition, but weather is not present in the validated Medallion, Snowflake, or dbt analytical contracts.
 
-### Azure Data Factory
+### Python acquisition
 
-Azure Data Factory (ADF) coordinates data movement and pipeline execution. It will parameterize source periods, trigger ingestion and Databricks jobs, enforce dependencies, apply retry policies, and publish run status. ADF is the orchestration layer, not the primary transformation engine.
+The local package builds official source URLs, streams downloads to temporary files, atomically publishes completed files, skips existing outputs unless replacement is explicit, and appends sanitized JSONL audit records. Source year/month is configuration-driven.
 
 ### Azure Data Lake Storage Gen2
 
-ADLS Gen2 is the durable system of record for lake data. It will store landed source files and Medallion datasets in separated, access-controlled paths. Directory layout will encode source, entity, and processing date where useful without exposing secrets.
+ADLS Gen2 is the durable system of record for immutable source objects and Delta datasets. The Python uploader uses `DefaultAzureCredential` and staged, size-verified, atomic remote publication. Databricks uses Unity Catalog and the existing access connector's managed identity. No storage key, SAS token, connection string, password, service principal, or client secret participates in the validated data path.
 
-### Bronze
+### Bronze Delta
 
-Bronze preserves source fidelity. Records receive ingestion metadata such as source file, batch identifier, ingestion timestamp, and schema version. Transformations are limited to what is required for reliable persistence and traceability.
+Bronze preserves every raw source row and adds file, ingestion, run, and source-period metadata. Content anomalies are observations, not filters. Yellow Taxi uses exact year/month partition replacement; taxi zones use an unpartitioned snapshot. Pipeline and quality evidence are stored as Delta audit datasets.
 
-### Azure Databricks and PySpark
+### Silver Delta
 
-Databricks provides scalable processing with PySpark and Delta Lake. Jobs will validate schemas, standardize types and values, quarantine invalid records, deduplicate data, perform joins, and build Silver and Gold outputs.
+Silver standardizes types and names, creates deterministic trip keys, validates chronology and taxi-zone relationships, and separates valid and rejected records. Quarantine retains all failed rules and the uncast Bronze record. Finite negative monetary values remain identified financial adjustments; null passenger counts remain analytically unknown.
 
-### Silver
+### Gold Delta
 
-Silver contains cleaned and conformed trip, zone, calendar, and weather data. It standardizes timestamps, units, identifiers, and null handling while enforcing documented data-quality rules.
-
-### Gold
-
-Gold contains analytics-ready facts, dimensions, and aggregates. Models will support trip performance, geographic demand, time trends, revenue, and weather-impact analysis with stable business definitions.
+Gold retains one row per valid Silver trip, builds deterministic date/time/location dimensions, adds guarded analytical measures, and publishes daily, hourly, and location aggregates. Facts and aggregates use source-period replacement; small dimensions use deterministic snapshots.
 
 ### Snowflake
 
-Snowflake is the analytical warehouse serving the seven Phase 6 Gold contracts. Phase 7 uses the Databricks Serverless Snowflake Spark connector with key-pair authentication and Snowflake-managed internal transfer staging. Data first lands in `URBANFLOW.LANDING`, passes count/schema/key/boundary checks, and then replaces a bounded partition or dimension snapshot transactionally in `URBANFLOW.ANALYTICS`; operational evidence is written to `URBANFLOW.AUDIT`. The complete two-pass workflow is live-validated, including reconciliation and idempotency gates.
+Snowflake serves the seven governed Gold contracts. Databricks writes through `URBANFLOW.LANDING`, executes schema/count/key/boundary/relationship/aggregate gates, then transactionally replaces a bounded partition or full dimension snapshot in `URBANFLOW.ANALYTICS`. Operational evidence is stored in `URBANFLOW.AUDIT`. The two-pass workflow is live-validated for reconciliation and idempotency.
 
-### dbt and SQL
+### dbt Core and SQL
 
-Phase 8 uses dbt Core after `URBANFLOW.ANALYTICS`. Source group `urbanflow_analytics` declares all seven governed relations, and seven staging views expose their complete contracts with lower-case column names and no filtering, aggregation, or business-rule changes. The aggregate source names `agg_daily`, `agg_location`, and `agg_hourly` map through `identifier` to the physical Phase 7 `*_TRIPS` tables. One ephemeral `int_trip_enriched` model resolves pickup/drop-off roles across date, minute, and location dimensions. Four deterministic mart views expose trip detail and the governed daily, hourly, and location grains for BI. Contract-backed generic and singular tests cover keys, joins, relationships, governed day parts, and count rules; freshness remains unset because no authoritative warehouse SLA exists. The layer is live-validated in `URBANFLOW.DBT_DEV`: 11 views were created, 95 tests passed, all Phase 7 row counts and aggregate measures reconciled, and dbt documentation generation succeeded.
+Phase 8 declares all seven `ANALYTICS` relations as dbt sources. Seven thin staging views preserve those contracts, `int_trip_enriched` performs six reusable pickup/drop-off dimension joins as an ephemeral model, and four deterministic mart views expose trip, daily, hourly, and location grains. The live `DBT_DEV` build created 11 views, passed all 95 tests, reconciled every source and mart measure to Phase 7, and generated documentation.
 
-### Power BI
+### Analytics consumers
 
-Power BI will consume stable Snowflake models to provide mobility dashboards and interactive analysis. Business measures will be defined consistently and refresh behavior will be documented.
+`DBT_DEV` views are the validated consumption boundary for analytical queries and a future BI layer. No Power BI semantic model, dashboard, published refresh, or other BI deployment is currently implemented.
 
-## Cross-cutting concerns
+## Cross-cutting architecture
 
-- Identity and secrets will use Azure-managed identities and approved secret stores where supported.
-- Audit metadata will connect source files, pipeline runs, Delta versions, and warehouse loads.
-- CI/CD will validate repository changes and later deploy environment-specific artifacts safely.
-- Storage, compute, and orchestration will be designed for bounded cost and repeatable teardown where appropriate.
-- dbt authentication will use environment variables or externally managed credentials; populated profiles, private keys, tokens, account identifiers, and generated dbt artifacts will not be committed.
+- **Identity and secrets:** Azure identity and managed identity are used for lake access; Snowflake key-pair material and the dbt profile remain outside Git.
+- **Lineage and audit:** source files, run IDs, ingestion/processing timestamps, schema fingerprints, row counts, quality metrics, load evidence, and reconciliation results connect the major boundaries.
+- **Reliability:** temporary publication, Delta ACID writes, exact partition replacement, Snowflake transactions, deterministic snapshots, and fail-closed configuration protect retries.
+- **Quality:** schema, required-field, duplicate, invalid-value, relationship, aggregate, and dbt contract checks run at the earliest useful layer.
+- **Scope:** orchestration, alerting, BI, CI/CD deployment, and automated cloud provisioning are deferred; they are not part of the diagram above.
 
 ## Phase 2 local acquisition boundary
 
@@ -85,7 +87,7 @@ NOAA CDO API v2 ─────┘   (optional; token required)
 
 TLC files are streamed to temporary files and atomically moved into place. A configured year/month produces exactly one trip-file request. Existing outputs are not downloaded again unless forced. NOAA uses its official token header and paginated `limit`/`offset` requests and combines the returned observations into one raw JSON artifact.
 
-These local paths model the future lake organization but are not ADLS Gen2, Delta Lake, or a cloud Bronze layer. ADF, Azure Databricks, Snowflake, dbt, and Power BI remain planned components.
+These local paths are the implemented acquisition boundary only; the later ADLS, Databricks, Snowflake, and dbt layers are implemented separately below. They are not created by the acquisition command. ADF and Power BI remain deferred.
 
 ## Implemented Phase 3 ADLS Gen2 layer
 
@@ -116,7 +118,7 @@ The implemented cloud paths are:
 - `bronze/reference/taxi_zones/taxi_zone_lookup.csv`
 - `bronze/weather/year=YYYY/month=MM/observations.json` when a local weather file exists
 
-The uploader does not create `silver/`, `gold/`, or unrelated empty directories. Those downstream paths are owned by the separately implemented Databricks Bronze, Silver, and Gold processing phases described below. ADF, Snowflake, dbt, and Power BI remain planned and unimplemented.
+The uploader does not create `silver/`, `gold/`, or unrelated empty directories. Those downstream paths are owned by the separately implemented Databricks Bronze, Silver, and Gold phases described below. Snowflake and dbt are also implemented separately in Phases 7-8; ADF and Power BI remain deferred.
 
 ## Implemented Phase 4 Databricks Bronze layer
 
@@ -227,3 +229,9 @@ downstream analytics / future Power BI
 Phase 8 owns warehouse presentation logic that is genuinely downstream or consumer-specific. Databricks continues to own source standardization, record validity, conformance, deduplication, Gold facts/dimensions/aggregates, and Delta incrementality. Phase 7 continues to own Snowflake landing, ANALYTICS replacement, audits, reconciliation, and idempotency. dbt must not duplicate those transformations without a documented reason or alter validated upstream data to satisfy a test.
 
 Snowflake database/schema access, role permissions, warehouse usage, and authentication remain externally managed prerequisites. The controlled validation used the explicitly prepared `URBANFLOW.DBT_DEV` target, configured `SECURITYADMIN` role, and `COMPUTE_WH`; it did not switch roles or modify grants. `profiles.yml`, the private key, and sensitive values remained outside the repository. Generated `target/`, logs, downloaded packages, and documentation outputs remained outside the repository or ignored. Query-history validation found zero ANALYTICS mutation queries during the validation window.
+
+## Architecture boundaries and deferred capabilities
+
+The current repository supplies acquisition code, ADLS integration, Databricks notebooks, Snowflake SQL/loading utilities, dbt models, and local contract tests. The Azure, Databricks, and Snowflake resources used for validation were prepared externally; the repository does not provision them automatically.
+
+Azure Data Factory was reviewed during Phase 9 and intentionally deferred. No ADF factory, linked service, pipeline, trigger, managed-identity assignment, or successful ADF run is part of the implemented architecture. Power BI, centralized monitoring/alerting, CI/CD deployment, infrastructure-as-code, and analytical weather enrichment are also future enhancements. Phase 10 has not started.

@@ -1,73 +1,66 @@
 # UrbanFlow Technical Design
 
-This document describes implemented and live-validated Phases 2-8. Orchestration, BI, and later phases remain pending unless explicitly marked implemented.
+This document describes the implementation and live validation completed through Phase 8. It separates proven behavior from deferred productionization work.
 
-## Source data ingestion
+## Source acquisition
 
-NYC TLC trip files and taxi-zone reference data will be acquired from their official public distribution endpoints. A real weather provider will be selected based on geographic coverage, historical availability, rate limits, licensing, and reproducible access. Ingestion will be parameterized by source, entity, and bounded time period. It will validate response status, file type, size, and where available checksums before making data eligible for processing.
+`src/ingestion/` acquires official NYC TLC monthly Parquet and taxi-zone CSV data. The client derives one bounded source-period URL, streams content to a `.part` file, and atomically renames it only after success. Existing files are skipped unless `--force` is supplied. Every attempt receives a UUID `run_id` and a JSONL audit record containing the public source URL, dataset, timing, status, byte/record measure, local path, and sanitized failure detail.
 
-Each run will assign a unique `run_id` and capture source URL/object, source period, retrieval timestamp, file name, byte size, status, and error details. Downloads will use temporary names and become visible at final paths only after successful completion.
+The optional NOAA/NCEI client sends its token only in the required request header, paginates bounded observations, and writes a combined raw JSON document. Without `NOAA_API_TOKEN`, weather is recorded as skipped and no request is made. Weather is not an input to the validated analytical model.
 
-## Raw and Bronze storage
+## Storage layout and source preservation
 
-ADLS Gen2 will separate immutable landed files from Bronze Delta tables. A prospective layout is:
+The implemented lake layout is:
 
 ```text
-landing/{source}/{entity}/source_year=YYYY/source_month=MM/
-bronze/{source}/{entity}/ingest_date=YYYY-MM-DD/
-silver/{domain}/{entity}/
-gold/{domain}/{entity}/
-quarantine/{source}/{entity}/run_id={run_id}/
+bronze/tlc/yellow/year=YYYY/month=MM/source.parquet
+bronze/reference/taxi_zones/taxi_zone_lookup.csv
+bronze/delta/yellow_taxi/
+bronze/delta/taxi_zones/
+silver/fact_trips/
+silver/dim_taxi_zones/
+silver/rejected/trips/
+silver/rejected/taxi_zones/
+gold/fact_trips/
+gold/dim_date/
+gold/dim_time/
+gold/dim_location/
+gold/agg_daily_trips/
+gold/agg_location_trips/
+gold/agg_hourly_trips/
+audit/{bronze,silver,gold}_pipeline/
+audit/{bronze,silver,gold}_quality/
 ```
 
-Exact paths will be finalized after source inspection. Landed objects will not be edited in place. Bronze will preserve source columns and add metadata such as `run_id`, `ingested_at_utc`, `source_file`, `source_period`, and `schema_version`.
+Local runtime data is ignored. The ADLS uploader authenticates with `DefaultAzureCredential`, uploads in bounded chunks to a temporary remote path, verifies the staged size, and atomically renames it. Same-size existing objects are skipped; a size conflict requires explicit `--overwrite`. The immutable raw objects are never rewritten by Bronze, Silver, or Gold processing.
 
-## Delta Lake
+## Delta Lake and partitioning
 
-Bronze, Silver, and Gold lake tables will use Delta Lake for ACID writes, schema controls, scalable merges, and version history. Table properties, retention, optimization, and vacuum settings will be chosen deliberately after volume and recovery requirements are measured. Destructive retention operations will not run by default.
+Bronze, Silver, and Gold outputs use Delta ACID writes. Yellow Taxi Bronze is partitioned by `_urbanflow_source_year` and `_urbanflow_source_month`. Silver/Gold trip facts, rejected trips, and Gold aggregates use `source_year` and `source_month`. A retry overwrites only the exact source period through `replaceWhere`. Taxi zones and the small deterministic dimensions use complete unpartitioned snapshot replacement.
 
-## Partitioning
+Blind append and a mutable global watermark are not part of the implementation. The explicit source period is the processing, retry, and backfill boundary.
 
-Partitioning will follow common query and processing boundaries, likely year/month for large trip tables and a date-oriented strategy for weather observations. Low-cardinality or small dimensions will remain unpartitioned. The design will avoid overly granular partitions and will be validated against actual file sizes and query patterns.
+## Schema, metadata, and lineage
 
-## Incremental loading
+Bronze requires the expected source columns, preserves every source field, and adds source file, UTC ingestion time, run ID, and—where applicable—source year/month. Source file lineage uses Unity Catalog's supported `_metadata.file_path` column.
 
-TLC file periods provide natural batch boundaries. Weather ingestion will use provider timestamps and bounded request windows. A control table will track planned, running, succeeded, and failed batches. A watermark will advance only after required downstream writes and audit records succeed. Backfills will accept explicit start/end periods and reuse normal processing logic.
+Silver uses explicit Spark types and stable snake-case names. Money uses `decimal(18,2)`; passenger count uses `decimal(10,2)` so unusual source values are not silently truncated. Bronze, Silver, and Gold run identifiers and timestamps are retained through the fact path. Schema fingerprints are recorded in pipeline audits.
 
-## Deduplication
+## Silver conformance and rejection design
 
-The project will first determine whether each source exposes a stable business key. Where it does not, a deterministic hash will be built from documented identifying fields after normalization. Within a batch, records will be ranked deterministically; across batches, Delta `merge` operations will prevent retry duplicates. Duplicate counts and selection rules will be audited rather than silently discarded.
+`fact_trips` is one valid standardized TLC record per row. `trip_id` is a SHA-256 fingerprint over all standardized business columns because the source has no stable trip identifier. Within a source period, deterministic ranking keeps the first fingerprint and routes later ranks to rejection.
 
-## Schema handling
+Trips are rejected for critical timestamp/location failures, drop-off before pickup, negative passenger count, invalid distance, required-money failures, decimal overflow, unknown location references, or duplicates. Taxi zones are rejected for invalid identifiers, missing labels, or duplicate IDs. Rejected records retain ordered `rejection_rules`, a primary rule, a joined reason, rejection timestamp, lineage, and the uncast Bronze record as JSON.
 
-Source schemas will be captured and versioned. Bronze may preserve newly observed source fields while flagging drift, but required-field removal, incompatible type changes, and unexpected semantic changes will fail or quarantine the batch. Silver will use explicit schemas and casts; it will not rely on permissive inference for production loads. Schema changes will be reviewed before promotion.
+Finite negative monetary values are preserved and marked as financial adjustments. Null passenger counts are retained as unknown. These are warnings rather than reasons to erase a real trip.
 
-## Silver transformations
+## Gold analytical design
 
-Silver processing will:
+The Gold fact retains one row per valid Silver trip and the deterministic `trip_id`. Date keys use `yyyyMMdd`, time keys use `HHmm`, and location keys reuse validated TLC identifiers. `dim_date` spans the complete represented pickup/drop-off range, `dim_time` contains all 1,440 minutes with governed day parts, and `dim_location` is a traceable normalized taxi-zone snapshot.
 
-- standardize field names, timestamps, time zones, numeric types, codes, and units;
-- validate pickup/drop-off chronology, plausible ranges, required identifiers, and coordinates/zones where applicable;
-- normalize TLC service variants into conformed fields while retaining source-specific detail;
-- join authoritative taxi-zone reference data;
-- map weather observations to appropriate time and geographic grain;
-- separate valid, rejected, and reviewable records;
-- retain lineage metadata linking outputs to source and run.
+Duration, speed, fare-per-mile, and tip-percentage calculations are guarded by mathematically valid denominators; invalid cases return null rather than zero, infinity, or NaN. Non-adjustment revenue and financial-adjustment amount remain separate measures without filtering the trip.
 
-## Gold fact and dimension model
-
-The primary fact will be `fact_trip` at one accepted TLC trip record per row. Candidate measures include trip count, passengers, distance, duration, fare components, total amount, and calculated speed where valid.
-
-Planned conformed dimensions include:
-
-- `dim_date` and `dim_time`
-- `dim_taxi_zone` with borough and service-zone attributes
-- `dim_service_type`
-- `dim_rate_code`
-- `dim_payment_type`
-- `dim_weather` or a weather observation bridge at the selected spatiotemporal grain
-
-Surrogate keys, unknown members, slowly changing behavior, and late-arriving records will be specified per dimension. Gold aggregates may summarize demand and revenue by hour, day, zone, service type, and weather condition. Every table will declare its grain.
+Daily and hourly aggregates are attributed to pickup date/time. Location revenue and distance are attributed to pickup location while both pickup and drop-off counts are exposed. All aggregate grains retain the source-period keys and reconcile to the fact.
 
 ## Snowflake loading
 
@@ -156,7 +149,7 @@ creation, key-pair association, and external environment/profile configuration. 
 session confirmed `SECURITYADMIN`, `COMPUTE_WH`, `URBANFLOW`, and `DBT_DEV`. Codex did not change
 roles or grants, and a read-only query-history check found zero ANALYTICS mutation queries during
 the validation window. Phase 8 does not change Phase 7 tables, Azure resources, or Databricks
-resources. Later Phase 11 CI/CD will reuse the same externalized profile contract.
+resources. Any future CI/CD implementation should reuse the same externalized profile contract.
 
 ### Live validation evidence
 
@@ -167,33 +160,42 @@ staging and four mart views in `DBT_DEV`; the intermediate remained ephemeral. A
 counts and all four mart counts matched Phase 7, and exact daily, hourly, and location measure
 mismatch counts were zero. Documentation generation described all 12 models and all 7 sources.
 
-## Data quality
+## Data quality strategy
 
-Checks will operate at the earliest useful layer:
+Quality checks execute where the relevant contract first becomes authoritative:
 
-- ingestion: file presence, size, format, and expected period;
-- Bronze: readable records, metadata completeness, and schema drift;
-- Silver: type validity, required fields, ranges, accepted codes, chronology, uniqueness, and quarantine rate;
-- Gold: grain uniqueness, referential integrity, measure reconciliation, and dimension coverage;
-- Snowflake/dbt: source freshness, not-null, unique, relationship, accepted-value, and business-rule tests.
+- **Acquisition:** request/file success, final-path publication, and audit status.
+- **Bronze:** readable non-empty input, required schema, persisted counts, partitions, and observational source metrics.
+- **Silver:** cast validity, required fields, chronology, finite/range rules, deterministic duplicates, taxi-zone relationships, rejection reconciliation, and quarantine rate.
+- **Gold:** critical keys, dimension uniqueness, all fact relationships, finite derived metrics, schema retention, and daily/hourly/location aggregate reconciliation.
+- **Snowflake:** landing schemas/counts/keys/boundaries, transactional target state, relationships, aggregate totals, audits, and two-pass idempotency.
+- **dbt:** nullability, uniqueness, accepted values, relationships, row preservation, mart keys, and focused business rules.
 
-Threshold breaches will be classified as warning or failure and stored with the run metadata.
+A `WARNING` preserves useful but imperfect real data; a critical failure blocks promotion. Metrics are stored by run and dataset. No test is weakened by rewriting governed upstream data.
 
-## Pipeline audit metadata
+## Audit and reconciliation
 
-An audit model will capture `run_id`, parent run, environment, pipeline/job name, source, dataset, batch period, code/config version, start/end timestamps, status, input/output/rejected counts, bytes processed, watermark, retry number, and sanitized error information. Dataset-level records will make multi-step reconciliation possible.
+Acquisition and upload write local JSONL events. Bronze, Silver, and Gold use structured Delta pipeline and quality audit datasets. Snowflake writes load and reconciliation evidence to `URBANFLOW.AUDIT`. Together these records capture run, dataset, source/target, source period, timestamps, counts, status, schema fingerprint where applicable, quality outcome, duration, pass identity, and sanitized errors.
 
-## Orchestration
+Material boundaries reconcile input, valid, rejected, landing, target, dimension, and aggregate counts. The final Phase 7 run passed 40 reconciliation checks, and Phase 8 independently matched all staging/mart counts and aggregate measures to `ANALYTICS`.
 
-ADF will coordinate acquisition, landing, Databricks jobs, Snowflake loading, dbt execution, and quality gates. Pipelines will accept environment and date/batch parameters, expose explicit dependencies, use bounded retries for transient errors, and avoid overlapping writes to the same batch. Manual backfills will use the same parameterized definitions as scheduled runs.
+## Idempotency and recovery
 
-## Monitoring
+Local downloads and uploads use temporary publication and existence checks. Delta facts/aggregates use exact source-period replacement. Small dimensions use deterministic snapshots. Snowflake uses landing validation plus explicit transactions and scoped replacement. dbt relations are deterministic views, with the trip-enrichment model ephemeral.
 
-Operational monitoring will combine ADF run state, Databricks job results, Delta/audit metrics, Snowflake load history, and dbt test results. Alerts will prioritize actionable conditions: failed pipelines, repeated retries, freshness breaches, abnormal row counts, high quarantine rate, or reconciliation failure. Dashboards and runbooks will link symptoms to the relevant `run_id`.
+Two Databricks/Snowflake passes with stable counts were required for completion. Failed Snowflake target work rolls back; failed configuration stops before writes. Backfill or retry must supply the same bounded source period and must not disturb unrelated periods.
 
-## Error handling
+## Orchestration and monitoring boundary
 
-Configuration and contract failures will stop before writes. Transient network or service failures may retry with exponential backoff and a fixed limit. Data errors will be quarantined when partial acceptance is explicitly allowed; systemic schema or quality failures will block promotion. Writes will use atomic or transactional patterns, failed batches will retain diagnostics, and reruns will use idempotent batch semantics.
+There is no deployed central orchestrator, schedule, alerting service, or SLA monitor. Phase workflows were executed in controlled Databricks jobs and through explicit dbt commands. Existing audit tables, test results, and job histories provide validation evidence, but continuous operational monitoring is not claimed.
+
+Azure Data Factory was evaluated during Phase 9 and intentionally deferred. No ADF definition is part of the implemented design. A future orchestrator may coordinate the existing parameterized steps, but it must preserve their ownership boundaries, idempotency, security, and reconciliation behavior.
+
+## Error handling and security
+
+Configuration and critical contract failures stop before target promotion. Network operations use bounded retries where implemented. Data-level failures are quarantined only when partial acceptance is explicitly allowed; errors are sanitized before audit output.
+
+Azure access uses identity-based authentication. Snowflake key-pair material, populated dbt profiles, and secret-like environment values remain outside the repository. `ANALYTICS` is the read-only dbt source and `DBT_DEV` is the separate target. Raw datasets, private keys, populated `.env` files, dbt targets/logs/packages, and rendered artifacts are not versioned.
 
 ## Implemented Phase 2 acquisition design
 
