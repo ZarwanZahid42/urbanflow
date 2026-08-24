@@ -1,0 +1,192 @@
+version: 2
+
+models:
+  - name: mart_trip_details
+    description: >-
+      BI-facing trip-detail view at one row per validated trip. It exposes conformed pickup
+      and drop-off date, time, and location attributes together with the authoritative Gold
+      trip measures and source-to-Gold lineage.
+    columns:
+      - name: trip_id
+        description: Deterministic primary/business key for a trip.
+        data_tests:
+          - not_null
+          - unique
+      - name: source_year
+        description: Source partition year.
+        data_tests:
+          - not_null
+      - name: source_month
+        description: Source partition month.
+        data_tests:
+          - not_null
+      - name: pickup_date_key
+        description: Pickup date foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
+      - name: dropoff_date_key
+        description: Drop-off date foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
+      - name: pickup_time_key
+        description: Pickup minute foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_time')
+              field: time_key
+      - name: dropoff_time_key
+        description: Drop-off minute foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_time')
+              field: time_key
+      - name: pickup_location_id
+        description: Pickup location foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_location')
+              field: location_id
+      - name: dropoff_location_id
+        description: Drop-off location foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_location')
+              field: location_id
+      - name: total_amount
+        description: Authoritative Phase 7 total trip amount, including adjustment semantics.
+      - name: is_financial_adjustment
+        description: Authoritative Phase 7 adjustment classification.
+        data_tests:
+          - not_null
+      - name: source_file
+        description: Bronze source-file lineage retained for traceability.
+      - name: gold_run_id
+        description: Gold processing run identifier retained for traceability.
+
+  - name: mart_daily_mobility
+    description: >-
+      Daily mobility presentation view at source year, source month, and pickup date grain.
+      It adds calendar attributes to the authoritative Phase 7 daily aggregate without
+      recalculating any measure.
+    columns:
+      - name: source_year
+        description: Source period year and first component of the business key.
+        data_tests:
+          - not_null
+      - name: source_month
+        description: Source period month and second component of the business key.
+        data_tests:
+          - not_null
+      - name: pickup_date_key
+        description: Pickup date and third component of the business key.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
+      - name: pickup_date
+        description: Calendar date resolved from the pickup date key.
+        data_tests:
+          - not_null
+      - name: trip_count
+        description: Authoritative Phase 7 trip count at the daily grain.
+        data_tests:
+          - not_null
+      - name: total_revenue
+        description: Authoritative Phase 7 total revenue; adjustments remain included.
+      - name: financial_adjustment_count
+        description: Count of financial-adjustment trips within the daily total.
+        data_tests:
+          - not_null
+      - name: gold_run_id
+        description: Gold run identifier for the aggregate row.
+        data_tests:
+          - not_null
+
+  - name: mart_hourly_mobility
+    description: >-
+      Hourly mobility presentation view at source year, source month, pickup date, and hour
+      grain. It adds calendar attributes while retaining the authoritative Gold hourly
+      measures and time-of-day classification.
+    columns:
+      - name: source_year
+        description: Source period year and first component of the business key.
+        data_tests:
+          - not_null
+      - name: source_month
+        description: Source period month and second component of the business key.
+        data_tests:
+          - not_null
+      - name: pickup_date_key
+        description: Pickup date and third component of the business key.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
+      - name: hour
+        description: Hour of day and fourth component of the business key.
+        data_tests:
+          - not_null
+      - name: time_of_day
+        description: Authoritative Gold day-part classification.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['Overnight', 'Morning', 'Afternoon', 'Evening']
+      - name: trip_count
+        description: Authoritative Phase 7 trip count at the hourly grain.
+        data_tests:
+          - not_null
+      - name: total_revenue
+        description: Authoritative Phase 7 total revenue at the hourly grain.
+      - name: gold_run_id
+        description: Gold run identifier for the aggregate row.
+        data_tests:
+          - not_null
+
+  - name: mart_location_mobility
+    description: >-
+      Location mobility presentation view at source year, source month, and TLC location
+      grain. It combines conformed location attributes with authoritative pickup, drop-off,
+      revenue, and distance measures from Phase 7.
+    columns:
+      - name: source_year
+        description: Source period year and first component of the business key.
+        data_tests:
+          - not_null
+      - name: source_month
+        description: Source period month and second component of the business key.
+        data_tests:
+          - not_null
+      - name: location_id
+        description: TLC location and third component of the business key.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('stg_dim_location')
+              field: location_id
+      - name: borough
+        description: Nullable conformed borough label from the location dimension.
+      - name: zone
+        description: Nullable conformed taxi-zone label from the location dimension.
+      - name: pickup_trip_count
+        description: Authoritative Phase 7 pickup count attributed to this location.
+        data_tests:
+          - not_null
+      - name: dropoff_trip_count
+        description: Authoritative Phase 7 drop-off count attributed to this location.
+        data_tests:
+          - not_null
+      - name: total_revenue
+        description: >-
+          Authoritative Phase 7 revenue attributed by pickup location; adjustment semantics
+          remain unchanged.
+      - name: gold_run_id
+        description: Gold run identifier for the aggregate row.
+        data_tests:
+          - not_null

@@ -1,6 +1,6 @@
 # UrbanFlow Technical Design
 
-This document describes implemented and live-validated Phases 2-7 and the initialized Phase 8 dbt boundary. Production dbt transformations, orchestration, BI, and later phases remain proposals unless explicitly marked implemented.
+This document describes implemented and live-validated Phases 2-7 and the complete local Phase 8 dbt implementation. Live dbt execution, orchestration, BI, and later phases remain pending unless explicitly marked implemented.
 
 ## Source data ingestion
 
@@ -77,48 +77,86 @@ The seven Gold tables have explicit Snowflake types matching the Phase 6 contrac
 
 ## Phase 8 dbt design
 
-Phase 8 has an initialized dbt Core project under `dbt/` plus an implemented local source/staging layer. Its only upstream business-data contract is the seven committed Phase 7 tables in `URBANFLOW.ANALYTICS`: `FACT_TRIPS`, `DIM_DATE`, `DIM_TIME`, `DIM_LOCATION`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS`. LANDING remains a transient transfer boundary and AUDIT remains operational evidence; neither is a dbt presentation source. No intermediate model, mart, generated documentation artifact, or successful Snowflake connection exists yet.
+Phase 8 is fully implemented locally under `dbt/`. Its only upstream business-data contract is
+the seven committed Phase 7 tables in `URBANFLOW.ANALYTICS`: `FACT_TRIPS`, `DIM_DATE`,
+`DIM_TIME`, `DIM_LOCATION`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and
+`AGG_HOURLY_TRIPS`. LANDING remains a transient transfer boundary and AUDIT remains operational
+evidence; neither is a dbt presentation source. No live dbt connection or execution is claimed.
 
-### Implemented source/staging structure and planned downstream layering
-
-The initialized repository structure is:
+### Implemented layering and lineage
 
 ```text
-dbt/
-+-- dbt_project.yml
-+-- profiles.yml.example
-+-- README.md
-+-- models/
-|   +-- staging/
-|   |   +-- sources.yml
-|   |   +-- staging.yml
-|   |   +-- stg_*.sql       # seven source-backed views
-|   +-- intermediate/README.md
-|   +-- marts/README.md
-+-- tests/
-    +-- assert_source_agg_*_unique_key.sql  # three composite-key tests
+source('urbanflow_analytics', ...)
+        -> seven stg_* views
+        -> int_trip_enriched (ephemeral)
+        -> mart_trip_details (view)
+
+stg_agg_daily + stg_dim_date         -> mart_daily_mobility (view)
+stg_agg_hourly + stg_dim_date        -> mart_hourly_mobility (view)
+stg_agg_location + stg_dim_location  -> mart_location_mobility (view)
 ```
 
-Source group `urbanflow_analytics` uses `source()` for every upstream dependency. Its logical aggregate names `agg_daily`, `agg_location`, and `agg_hourly` use `identifier` to resolve the authoritative physical `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS` relations. Each staging model explicitly selects every Phase 7 contract column, exposes lower-case names, and preserves upstream types, keys, grain, measures, null semantics, and lineage without filters or calculations. Downstream dependencies will use `ref()`. Marts will be added only for a documented analytical question and grain; Power BI-specific presentation remains future work.
+Source group `urbanflow_analytics` maps logical aggregate names through `identifier` to the
+physical Phase 7 `*_TRIPS` relations. Each staging model explicitly selects every upstream
+contract column, exposes lower-case names, and preserves types, keys, grain, measures, null
+semantics, and lineage without filters or calculations. All downstream SQL uses `ref()` and
+contains explicit projections; no production model hardcodes `URBANFLOW.ANALYTICS` or uses
+`SELECT *`.
 
-All seven staging models are configured as views. Mart materializations will be chosen from measured volume and consumer needs during implementation. Any incremental model must declare and test a stable unique key, bound its incremental predicate, and prove retry/backfill idempotency; otherwise a view or full deterministic table build is preferred.
+`int_trip_enriched` resolves date, minute, and location dimensions in pickup and drop-off roles
+at one row per trip. This is a justified reusable semantic operation: it centralizes six joins
+and consistent role-prefixed naming without recomputing Gold metrics. It is ephemeral so the
+lineage is visible and reusable while avoiding another persisted copy of the full fact.
 
-### Implemented staging tests and planned downstream reconciliation
+`mart_trip_details` retains one row per validated trip for detailed service, payment, passenger,
+duration, distance, financial, pickup/drop-off, and lineage analysis. The daily, hourly, and
+location marts preserve the authoritative Phase 7 aggregate grains and measures while adding
+conformed calendar or location attributes. This enables BI-friendly labels without duplicating
+Databricks aggregation logic. All marts are deterministic views because current requirements do
+not justify incremental state; a persisted or incremental design requires live workload evidence,
+a tested unique key, and bounded retry/backfill behavior.
 
-Source YAML tests guaranteed Phase 7 key nullability and uniqueness for facts/dimensions, key nullability for aggregates, and the three aggregate composite keys through focused singular tests. Staging YAML repeats its published key constraints and tests all six guaranteed fact-to-date/time/location relationships through `ref()`. It does not duplicate Phase 7 row-count, partition-boundary, audit, idempotency, or aggregate-total reconciliation. Missing passenger counts and financial-adjustment rows retain their documented semantics rather than being treated as defects merely to make tests green.
+### Tests and inherited contracts
 
-No source freshness configuration is present because Phase 7 defines no authoritative warehouse freshness SLA or loaded-at contract. A later freshness check requires an actionable cadence and trustworthy timestamp; snapshot dimensions will not receive arbitrary rules. Initial live dbt validation must reconcile key counts and measures to the Phase 7 evidence, while avoiding permanent hardcoded row counts in production tests as later source periods arrive.
+Generic source/staging tests preserve Phase 7 key nullability and uniqueness and the six validated
+fact relationships. Aggregate staging relationships to date/location dimensions guard the joins
+used by marts. Intermediate and mart YAML tests cover trip keys, resolved dimension attributes,
+business-key components, relationships, non-null governed fields, and the four authoritative
+hourly day parts. Singular tests cover the three Phase 7 aggregate source keys, preservation of
+fact row count through the six-way enrichment, all three mart aggregate keys, nonnegative count
+measures, and the rule that daily financial-adjustment count cannot exceed trip count.
 
-### Planned documentation and lineage
+The dbt layer deliberately does not duplicate Phase 7 load counts, partition boundaries, audit
+records, transactional replacement, aggregate-total reconciliation, or two-pass idempotency.
+Missing passenger counts, nullable location labels, negative financial adjustments, and other
+preserved upstream semantics are not converted into failures. Source freshness remains unset
+because Phase 7 defines no authoritative actionable freshness SLA or loaded-at contract.
 
-Every source and model will document purpose, grain, keys, important measures, ownership, and upstream contract. `dbt docs generate` will produce the catalog and lineage graph for review. Generated `target/`, logs, downloaded package directories, and rendered documentation will remain untracked unless a later portfolio-delivery decision explicitly selects an artifact.
+### Documentation and materialization artifacts
+
+Source/model YAML and the layer READMEs document purpose, grain, keys, important measures,
+materialization, ownership, and lineage. Offline `dbt parse` produces the complete lineage
+manifest in a disposable directory. The first approved live workflow will run `dbt docs generate`
+and inspect the rendered catalog. Generated `target/`, `logs/`, `dbt_packages/`, and rendered
+documentation remain untracked.
 
 ### Environment, credentials, and permissions
 
-UrbanFlow uses Python 3.11+ and constrains both `dbt-core` and `dbt-snowflake` to the 1.9 release line. The initialized local environment uses dbt Core 1.9.11, dbt-snowflake 1.9.4, and snowflake-connector-python 3.18.1. The 1.9 constraint preserves Phase 7's validated connector `<4` boundary; dbt reports that this release line is deprecated, so a future upgrade must validate connector 4.x compatibility before changing it. The dbt project and profile are both named `urbanflow`. `profiles.yml.example` reads only `DBT_SNOWFLAKE_*`, `DBT_TARGET_SCHEMA`, and `DBT_THREADS`; a populated `profiles.yml` remains external or ignored. Secrets, private keys, passwords, tokens, account identifiers, and connection files containing values will not be committed.
+UrbanFlow uses Python 3.11+ and constrains both `dbt-core` and `dbt-snowflake` to the 1.9 release
+line. The local environment uses dbt Core 1.9.11, dbt-snowflake 1.9.4, and
+snowflake-connector-python 3.18.1. The 1.9 constraint preserves Phase 7's validated connector
+`<4` boundary; dbt reports that this release line is deprecated, so a future upgrade must validate
+connector 4.x compatibility before changing it. The dbt project and profile are both named
+`urbanflow`. `profiles.yml.example` reads only `DBT_SNOWFLAKE_*`, `DBT_TARGET_SCHEMA`, and
+`DBT_THREADS`; a populated `profiles.yml` remains external or ignored.
 
-Manual Snowflake work may be required to grant least-privilege database/schema access, ANALYTICS source reads, target-schema writes, and warehouse usage, and to configure approved local or CI authentication. The target schema and dbt execution role are not assumed by this design. Phase 8 will not change Phase 7 tables or grants without explicit authorization. Later Phase 11 CI/CD will reuse the same externalized profile contract rather than introduce repository-held credentials.
-
+Manual Snowflake work is still required before live validation: select the target schema and
+least-privilege execution role, approve database and warehouse usage, grant read access to
+ANALYTICS and the required target-schema relation privileges, confirm key-pair authentication,
+and provide environment values plus the private-key path externally. No exact grants, role,
+account identifier, credential, or private-key content is assumed or accessed. Phase 8 does not
+change Phase 7 tables, grants, Azure resources, or Databricks resources. Later Phase 11 CI/CD will
+reuse the same externalized profile contract.
 ## Data quality
 
 Checks will operate at the earliest useful layer:

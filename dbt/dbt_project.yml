@@ -17,3 +17,7 @@ models:
   urbanflow:
     staging:
       +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: view

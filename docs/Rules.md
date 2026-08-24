@@ -82,6 +82,7 @@
 - Never place secrets in `dbt_project.yml`, schema YAML, model SQL, macros, tests, logs, generated documentation, or tracked example configuration.
 - Do not mutate Phase 7 LANDING, ANALYTICS, or AUDIT tables, weaken their contracts, or rewrite validated source data merely to make a dbt test pass.
 - Keep staging models thin and deterministic. Do not duplicate transformations already correctly owned by Databricks Silver/Gold without a documented analytical or warehouse-specific reason.
+- Keep the current staging and mart relations as views and `int_trip_enriched` ephemeral unless live workload evidence justifies a different persisted design. Do not introduce incremental state without a tested unique key and bounded retry/backfill contract.
 - Build marts only for a declared business grain and consumer need; use explicit columns, stable keys, and idempotent materializations. Incremental models require a documented unique key and bounded retry/backfill behavior.
 - Test source and model nullability, uniqueness, accepted values, relationships, freshness where meaningful, and documented business rules. Reconcile important measures with the Phase 7 upstream evidence.
 - Generate and review dbt lineage/documentation, but do not commit generated `target/`, `logs/`, package directories, or local profile artifacts.

@@ -107,19 +107,30 @@ Phase 7 is complete in commit `ea0f67f`. Databricks Serverless job `957309293840
 
 This validated Snowflake contract is the upstream boundary for Phase 8. dbt must consume ANALYTICS without replacing the Databricks Silver/Gold transformations, the Phase 7 loading workflow, or the governed LANDING/ANALYTICS/AUDIT tables.
 
-## Planned Phase 8 dbt milestone
+## Locally implemented Phase 8 dbt milestone
 
-Phase 8 now has a locally initialized dbt Core project, safe externalized profile contract, seven ANALYTICS source declarations, and seven conservative staging views with contract-backed tests. Intermediate models, marts, documentation generation, and a Snowflake connection are not implemented yet.
+The complete local Phase 8 implementation now includes the constrained dbt Core project, safe
+externalized profile contract, seven ANALYTICS sources, seven conservative staging views, one
+ephemeral trip-enrichment model, four BI-facing mart views, focused generic/singular tests, static
+architecture tests, and synchronized repository documentation.
 
-Expected Phase 8 deliverables are:
+The implemented presentation contracts are:
 
-- a reproducible dbt Core project using the constrained Snowflake adapter;
-- explicit source declarations for the seven `URBANFLOW.ANALYTICS` relations;
-- thin staging models that standardize warehouse-facing names and contracts without duplicating Databricks logic;
-- justified marts/presentation models with declared grains for downstream analytics and later Power BI use;
-- source/model tests for schema, nullability, uniqueness, relationships, accepted values, freshness where meaningful, and business rules;
-- reconciliation of important model counts and measures to the committed Phase 7 evidence;
-- generated dbt documentation and lineage, with generated artifacts excluded from Git; and
-- secure local setup instructions using environment variables or externally managed credentials rather than tracked secrets or profiles.
+- `mart_trip_details`, at one validated trip per row, for detailed service, payment, passenger,
+  duration, distance, revenue, and pickup/drop-off analysis;
+- `mart_daily_mobility`, at source year/month and pickup-date grain;
+- `mart_hourly_mobility`, at source year/month, pickup-date, and hour grain; and
+- `mart_location_mobility`, at source year/month and TLC-location grain.
 
-Phase 8 succeeds only after the project resolves reproducibly, parses/compiles, connects through an approved least-privilege Snowflake configuration, passes its source/model/business tests, reconciles with the Phase 7 contract, and generates documentation. Database/schema access, role permissions, warehouse usage, authentication, and secure environment configuration may require explicit manual Snowflake work. No credentials or role/account details are invented by this planning step.
+The aggregate marts reuse Phase 7's authoritative daily, hourly, and location measures and add
+conformed descriptive attributes. dbt does not recalculate Gold measures, filter financial
+adjustments, mutate ANALYTICS, or duplicate Phase 7 audits, partition checks, reconciliation, and
+idempotency. No freshness test is invented because no actionable warehouse freshness SLA exists.
+
+Local/offline success means dependency compatibility, `dbt parse`, manifest lineage inspection,
+Python tests and compilation, dependency health, diff checks, and security/artifact scans pass
+without a Snowflake connection. Full live Phase 8 validation remains pending: a human must approve
+the target schema and least-privilege dbt role, provide external key-pair configuration, run the
+first `dbt debug`/`dbt build`/documentation generation against Snowflake, and reconcile results to
+the Phase 7 evidence. Generated artifacts remain untracked, and no credential or role/account
+detail is invented by this implementation.

@@ -1,0 +1,31 @@
+select
+    daily.source_year,
+    daily.source_month,
+    daily.pickup_date_key,
+    date_dimension.calendar_date as pickup_date,
+    date_dimension.year as pickup_year,
+    date_dimension.quarter as pickup_quarter,
+    date_dimension.month as pickup_calendar_month,
+    date_dimension.month_name as pickup_month_name,
+    date_dimension.week as pickup_week,
+    date_dimension.day as pickup_day,
+    date_dimension.day_of_week as pickup_day_of_week,
+    date_dimension.day_name as pickup_day_name,
+    date_dimension.is_weekend as pickup_is_weekend,
+    daily.trip_count,
+    daily.total_revenue,
+    daily.average_fare,
+    daily.average_total_amount,
+    daily.average_trip_distance,
+    daily.total_distance,
+    daily.average_passenger_count,
+    daily.tip_revenue,
+    daily.toll_revenue,
+    daily.non_adjustment_revenue,
+    daily.financial_adjustment_count,
+    daily.financial_adjustment_amount,
+    daily.gold_run_id,
+    daily.gold_processed_at_utc
+from {{ ref('stg_agg_daily') }} as daily
+inner join {{ ref('stg_dim_date') }} as date_dimension
+    on daily.pickup_date_key = date_dimension.date_key

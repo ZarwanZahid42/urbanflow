@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: int_trip_enriched
+    description: >-
+      Reusable trip-grain semantic join that resolves the pickup and drop-off roles of the
+      date, minute, and location dimensions. It preserves each validated Phase 7 fact and
+      its measures while adding descriptive attributes for downstream presentation models.
+    columns:
+      - name: trip_id
+        description: Deterministic trip business key; the model remains at one row per trip.
+        data_tests:
+          - not_null
+          - unique
+      - name: pickup_date
+        description: Calendar date resolved from the pickup date key.
+        data_tests:
+          - not_null
+      - name: dropoff_date
+        description: Calendar date resolved from the drop-off date key.
+        data_tests:
+          - not_null
+      - name: pickup_hour
+        description: Hour of day resolved from the pickup minute key.
+        data_tests:
+          - not_null
+      - name: dropoff_hour
+        description: Hour of day resolved from the drop-off minute key.
+        data_tests:
+          - not_null
+      - name: pickup_borough
+        description: Nullable borough label for the pickup location, inherited from Phase 7.
+      - name: dropoff_borough
+        description: Nullable borough label for the drop-off location, inherited from Phase 7.
+      - name: is_financial_adjustment
+        description: >-
+          Phase 7 financial-adjustment classification, preserved without filtering or
+          reclassification.
+        data_tests:
+          - not_null
+      - name: source_file
+        description: Bronze source-file lineage propagated from the governed fact.
+      - name: gold_run_id
+        description: Gold processing run identifier propagated from the governed fact.

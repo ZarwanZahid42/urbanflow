@@ -112,6 +112,10 @@ models:
         description: Source period month and second component of the aggregate grain.
       - name: pickup_date_key
         description: Pickup date at the aggregate grain.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
       - name: trip_count
         description: Number of trips at the declared daily grain.
       - name: total_revenue
@@ -129,6 +133,10 @@ models:
         description: Source period month and second component of the aggregate grain.
       - name: location_id
         description: TLC location identifier at the aggregate grain.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_location')
+              field: location_id
       - name: pickup_trip_count
         description: Pickup trip count at the declared location grain.
       - name: dropoff_trip_count
@@ -146,6 +154,10 @@ models:
         description: Source period month and second component of the aggregate grain.
       - name: pickup_date_key
         description: Pickup date at the aggregate grain.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
       - name: hour
         description: Hour of day at the aggregate grain.
       - name: trip_count
