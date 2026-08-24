@@ -1,0 +1,110 @@
+version: 2
+
+sources:
+  - name: urbanflow_analytics
+    description: >-
+      Read-only Phase 7 Snowflake ANALYTICS contract. Databricks and Phase 7 remain
+      responsible for loading, integrity validation, reconciliation, and idempotency.
+      No freshness policy is declared because the repository has no authoritative
+      warehouse freshness SLA or loaded-at contract.
+    database: "{{ env_var('DBT_SNOWFLAKE_DATABASE') }}"
+    schema: ANALYTICS
+    tables:
+      - name: fact_trips
+        identifier: FACT_TRIPS
+        description: One row per validated Gold trip, including dimensional keys, measures, and lineage.
+        columns:
+          - name: trip_id
+            description: Deterministic trip identifier and guaranteed Phase 7 business key.
+            data_tests:
+              - not_null
+              - unique
+          - name: pickup_date_key
+            description: Pickup date foreign key to DIM_DATE.
+            data_tests: [not_null]
+          - name: dropoff_date_key
+            description: Drop-off date foreign key to DIM_DATE.
+            data_tests: [not_null]
+          - name: pickup_time_key
+            description: Pickup minute foreign key to DIM_TIME.
+            data_tests: [not_null]
+          - name: dropoff_time_key
+            description: Drop-off minute foreign key to DIM_TIME.
+            data_tests: [not_null]
+          - name: pickup_location_id
+            description: Pickup location foreign key to DIM_LOCATION.
+            data_tests: [not_null]
+          - name: dropoff_location_id
+            description: Drop-off location foreign key to DIM_LOCATION.
+            data_tests: [not_null]
+          - name: source_year
+            description: Source partition year.
+            data_tests: [not_null]
+          - name: source_month
+            description: Source partition month.
+            data_tests: [not_null]
+
+      - name: dim_date
+        identifier: DIM_DATE
+        description: Deterministic calendar dimension with one row per date.
+        columns:
+          - name: date_key
+            description: Integer calendar key in YYYYMMDD form.
+            data_tests:
+              - not_null
+              - unique
+
+      - name: dim_time
+        identifier: DIM_TIME
+        description: Deterministic time dimension with one row per minute of day.
+        columns:
+          - name: time_key
+            description: Integer minute-grain time key.
+            data_tests:
+              - not_null
+              - unique
+
+      - name: dim_location
+        identifier: DIM_LOCATION
+        description: TLC taxi-zone dimension with one row per location identifier.
+        columns:
+          - name: location_id
+            description: TLC location identifier and guaranteed Phase 7 key.
+            data_tests:
+              - not_null
+              - unique
+
+      - name: agg_daily
+        identifier: AGG_DAILY_TRIPS
+        description: Daily trip measures at source year, source month, and pickup date grain.
+        columns:
+          - name: source_year
+            data_tests: [not_null]
+          - name: source_month
+            data_tests: [not_null]
+          - name: pickup_date_key
+            data_tests: [not_null]
+
+      - name: agg_location
+        identifier: AGG_LOCATION_TRIPS
+        description: Pickup and drop-off measures at source period and location grain.
+        columns:
+          - name: source_year
+            data_tests: [not_null]
+          - name: source_month
+            data_tests: [not_null]
+          - name: location_id
+            data_tests: [not_null]
+
+      - name: agg_hourly
+        identifier: AGG_HOURLY_TRIPS
+        description: Hourly trip measures at source period, pickup date, and hour grain.
+        columns:
+          - name: source_year
+            data_tests: [not_null]
+          - name: source_month
+            data_tests: [not_null]
+          - name: pickup_date_key
+            data_tests: [not_null]
+          - name: hour
+            data_tests: [not_null]

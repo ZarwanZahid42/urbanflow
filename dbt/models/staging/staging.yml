@@ -1,0 +1,152 @@
+version: 2
+
+models:
+  - name: stg_fact_trips
+    description: >-
+      Thin view over source('urbanflow_analytics', 'fact_trips') at one row per validated
+      trip. It preserves Phase 7 measures, dimensional keys, source period, and
+      Bronze/Silver/Gold lineage.
+    columns:
+      - name: trip_id
+        description: Deterministic trip business key.
+        data_tests:
+          - not_null
+          - unique
+      - name: pickup_date_key
+        description: Pickup date foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
+      - name: dropoff_date_key
+        description: Drop-off date foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_date')
+              field: date_key
+      - name: pickup_time_key
+        description: Pickup minute foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_time')
+              field: time_key
+      - name: dropoff_time_key
+        description: Drop-off minute foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_time')
+              field: time_key
+      - name: pickup_location_id
+        description: Pickup location foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_location')
+              field: location_id
+      - name: dropoff_location_id
+        description: Drop-off location foreign key.
+        data_tests:
+          - relationships:
+              to: ref('stg_dim_location')
+              field: location_id
+      - name: total_amount
+        description: Source total trip amount; adjustment rows retain their Phase 7 semantics.
+      - name: is_financial_adjustment
+        description: Phase 7 classification indicating a financial-adjustment trip.
+      - name: source_year
+        description: Source partition year.
+      - name: source_month
+        description: Source partition month.
+      - name: gold_run_id
+        description: Gold processing run identifier propagated through Phase 7.
+
+  - name: stg_dim_date
+    description: >-
+      Thin view over source('urbanflow_analytics', 'dim_date') at one row per calendar date.
+    columns:
+      - name: date_key
+        description: Integer calendar key in YYYYMMDD form.
+        data_tests:
+          - not_null
+          - unique
+      - name: calendar_date
+        description: Calendar date represented by the row.
+
+  - name: stg_dim_time
+    description: >-
+      Thin view over source('urbanflow_analytics', 'dim_time') at one row per minute of day.
+    columns:
+      - name: time_key
+        description: Integer minute-grain time key.
+        data_tests:
+          - not_null
+          - unique
+      - name: hour
+        description: Hour of day inherited from Phase 7.
+      - name: minute
+        description: Minute within the hour inherited from Phase 7.
+
+  - name: stg_dim_location
+    description: >-
+      Thin view over source('urbanflow_analytics', 'dim_location') at one row per TLC
+      location identifier.
+    columns:
+      - name: location_id
+        description: TLC taxi-zone location identifier.
+        data_tests:
+          - not_null
+          - unique
+      - name: borough
+        description: Source borough label; nullable according to the Phase 7 contract.
+      - name: zone
+        description: Source taxi-zone label; nullable according to the Phase 7 contract.
+
+  - name: stg_agg_daily
+    description: >-
+      Pass-through view over source('urbanflow_analytics', 'agg_daily') at source year,
+      source month, and pickup date grain. Measures are calculated upstream by Databricks
+      Gold and are not recomputed here.
+    columns:
+      - name: source_year
+        description: Source period year and first component of the aggregate grain.
+      - name: source_month
+        description: Source period month and second component of the aggregate grain.
+      - name: pickup_date_key
+        description: Pickup date at the aggregate grain.
+      - name: trip_count
+        description: Number of trips at the declared daily grain.
+      - name: total_revenue
+        description: Phase 7 total revenue measure at the declared daily grain.
+
+  - name: stg_agg_location
+    description: >-
+      Pass-through view over source('urbanflow_analytics', 'agg_location') at source year,
+      source month, and location grain. Measures are calculated upstream by Databricks Gold
+      and are not recomputed here.
+    columns:
+      - name: source_year
+        description: Source period year and first component of the aggregate grain.
+      - name: source_month
+        description: Source period month and second component of the aggregate grain.
+      - name: location_id
+        description: TLC location identifier at the aggregate grain.
+      - name: pickup_trip_count
+        description: Pickup trip count at the declared location grain.
+      - name: dropoff_trip_count
+        description: Drop-off trip count at the declared location grain.
+
+  - name: stg_agg_hourly
+    description: >-
+      Pass-through view over source('urbanflow_analytics', 'agg_hourly') at source year,
+      source month, pickup date, and hour grain. Measures are calculated upstream by
+      Databricks Gold and are not recomputed here.
+    columns:
+      - name: source_year
+        description: Source period year and first component of the aggregate grain.
+      - name: source_month
+        description: Source period month and second component of the aggregate grain.
+      - name: pickup_date_key
+        description: Pickup date at the aggregate grain.
+      - name: hour
+        description: Hour of day at the aggregate grain.
+      - name: trip_count
+        description: Number of trips at the declared hourly grain.

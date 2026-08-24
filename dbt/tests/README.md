@@ -1,4 +1,5 @@
 # Singular tests
 
-Phase 8 will place business-rule and reconciliation SQL tests here when generic schema tests
-are insufficient. No dbt tests are implemented during initialization.
+This directory contains only singular tests that standard generic tests cannot express. The
+current tests enforce the three Phase 7 aggregate composite keys. Source and staging generic
+tests remain beside their YAML contracts under `models/staging/`.

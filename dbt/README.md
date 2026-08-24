@@ -1,11 +1,14 @@
 # UrbanFlow dbt
 
-This directory contains the Phase 8 dbt Core project scaffold. Initialization does not
-include production models, tests, seeds, snapshots, packages, or a live Snowflake connection.
+This directory contains the Phase 8 dbt Core project. The implemented local layer declares
+the seven governed Phase 7 ANALYTICS sources and exposes conservative staging views with
+contract-backed tests. It does not include intermediate models, marts, seeds, snapshots,
+packages, or a live Snowflake connection.
 
-The dbt project and profile name are both `urbanflow`. `URBANFLOW.ANALYTICS` remains the
-governed Phase 7 upstream contract; later Phase 8 work will declare its seven relations as
-sources and build downstream staging and presentation models without mutating Phase 7 tables.
+The dbt project and profile name are both `urbanflow`. Source group
+`urbanflow_analytics` maps logical aggregate names such as `agg_daily` to the physical Phase 7
+relations such as `AGG_DAILY_TRIPS`. Staging models select and rename every contracted column
+without filtering, aggregating, or mutating the upstream tables.
 
 ## Safe local configuration
 

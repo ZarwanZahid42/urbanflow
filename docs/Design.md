@@ -77,9 +77,9 @@ The seven Gold tables have explicit Snowflake types matching the Phase 6 contrac
 
 ## Phase 8 dbt design
 
-Phase 8 now has an initialized dbt Core project for Snowflake under `dbt/`, with a safe environment-variable profile example and no production model, test, generated documentation artifact, or successful Snowflake connection. Its only upstream business-data contract is the seven committed Phase 7 tables in `URBANFLOW.ANALYTICS`: `FACT_TRIPS`, `DIM_DATE`, `DIM_TIME`, `DIM_LOCATION`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS`. LANDING remains a transient transfer boundary and AUDIT remains operational evidence; neither is the default presentation source.
+Phase 8 has an initialized dbt Core project under `dbt/` plus an implemented local source/staging layer. Its only upstream business-data contract is the seven committed Phase 7 tables in `URBANFLOW.ANALYTICS`: `FACT_TRIPS`, `DIM_DATE`, `DIM_TIME`, `DIM_LOCATION`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS`. LANDING remains a transient transfer boundary and AUDIT remains operational evidence; neither is a dbt presentation source. No intermediate model, mart, generated documentation artifact, or successful Snowflake connection exists yet.
 
-### Initialized project and planned model layering
+### Implemented source/staging structure and planned downstream layering
 
 The initialized repository structure is:
 
@@ -89,21 +89,25 @@ dbt/
 +-- profiles.yml.example
 +-- README.md
 +-- models/
-|   +-- staging/README.md
+|   +-- staging/
+|   |   +-- sources.yml
+|   |   +-- staging.yml
+|   |   +-- stg_*.sql       # seven source-backed views
 |   +-- intermediate/README.md
 |   +-- marts/README.md
-+-- tests/README.md
++-- tests/
+    +-- assert_source_agg_*_unique_key.sql  # three composite-key tests
 ```
 
-Source declarations will use `source()` and downstream dependencies will use `ref()` so dbt can build an accurate lineage graph. Staging models will use explicit columns and preserve Phase 7 keys and grains while providing a stable lower-case warehouse interface. They will not repeat cleansing, deduplication, financial-adjustment classification, conformance, or aggregate construction already owned by Databricks. Marts will be added only for a documented analytical question and grain; Power BI-specific presentation remains downstream and future.
+Source group `urbanflow_analytics` uses `source()` for every upstream dependency. Its logical aggregate names `agg_daily`, `agg_location`, and `agg_hourly` use `identifier` to resolve the authoritative physical `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS` relations. Each staging model explicitly selects every Phase 7 contract column, exposes lower-case names, and preserves upstream types, keys, grain, measures, null semantics, and lineage without filters or calculations. Downstream dependencies will use `ref()`. Marts will be added only for a documented analytical question and grain; Power BI-specific presentation remains future work.
 
-Views are the expected default for thin staging models. Mart materializations will be chosen from measured volume and consumer needs during implementation. Any incremental model must declare and test a stable unique key, bound its incremental predicate, and prove retry/backfill idempotency; otherwise a view or full deterministic table build is preferred.
+All seven staging models are configured as views. Mart materializations will be chosen from measured volume and consumer needs during implementation. Any incremental model must declare and test a stable unique key, bound its incremental predicate, and prove retry/backfill idempotency; otherwise a view or full deterministic table build is preferred.
 
-### Planned tests and reconciliation
+### Implemented staging tests and planned downstream reconciliation
 
-Source and model YAML will document columns and apply not-null, unique, accepted-value, and relationship tests where the Phase 7 contract makes them valid. Singular tests will cover business rules that generic tests cannot express, including date/time/location relationships, bounded source periods, nonnegative trip counts, and aggregate-to-fact reconciliation. Missing passenger counts and financial-adjustment rows must retain their documented semantics rather than be treated as defects merely to make tests green.
+Source YAML tests guaranteed Phase 7 key nullability and uniqueness for facts/dimensions, key nullability for aggregates, and the three aggregate composite keys through focused singular tests. Staging YAML repeats its published key constraints and tests all six guaranteed fact-to-date/time/location relationships through `ref()`. It does not duplicate Phase 7 row-count, partition-boundary, audit, idempotency, or aggregate-total reconciliation. Missing passenger counts and financial-adjustment rows retain their documented semantics rather than being treated as defects merely to make tests green.
 
-Freshness checks will be configured only where a trustworthy loaded-at timestamp and dataset cadence make the result actionable; snapshot dimensions will not receive arbitrary freshness rules. Initial live dbt validation must reconcile key counts and measures to the Phase 7 evidence, while avoiding permanent hardcoded row counts in production tests as later source periods arrive.
+No source freshness configuration is present because Phase 7 defines no authoritative warehouse freshness SLA or loaded-at contract. A later freshness check requires an actionable cadence and trustworthy timestamp; snapshot dimensions will not receive arbitrary rules. Initial live dbt validation must reconcile key counts and measures to the Phase 7 evidence, while avoiding permanent hardcoded row counts in production tests as later source periods arrive.
 
 ### Planned documentation and lineage
 

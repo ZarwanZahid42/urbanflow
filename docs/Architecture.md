@@ -15,7 +15,7 @@ Databricks / Delta: Bronze -> Silver -> Gold
 Snowflake: LANDING -> validated ANALYTICS (+ AUDIT evidence)
       |
       v
-dbt Core (Phase 8 initialized; models planned): sources -> staging -> marts/presentation
+dbt Core (Phase 8 sources/staging implemented; marts planned)
       |
       v
 Downstream analytics / Power BI (future)
@@ -59,7 +59,7 @@ Snowflake is the analytical warehouse serving the seven Phase 6 Gold contracts. 
 
 ### dbt and SQL
 
-Phase 8 will use dbt Core after `URBANFLOW.ANALYTICS` to manage thin warehouse staging models, justified business marts/presentation models, tests, lineage, and generated documentation. The local `dbt/` project scaffold and environment-only profile example are initialized; source declarations, models, tests, generated documentation, and a live Snowflake connection are not implemented yet. dbt will read the seven governed ANALYTICS relations as explicit sources and publish downstream relations in a separately authorized target schema. It will not read LANDING as the business contract, replace Databricks Silver/Gold, or mutate Phase 7 tables.
+Phase 8 uses dbt Core after `URBANFLOW.ANALYTICS`. Source group `urbanflow_analytics` now declares all seven governed relations, and seven staging views expose their complete contracts with lower-case column names and no filtering, aggregation, or business-rule changes. The aggregate source names `agg_daily`, `agg_location`, and `agg_hourly` map through `identifier` to the physical Phase 7 `*_TRIPS` tables. Contract-backed source and staging tests cover guaranteed keys and fact-to-dimension relationships; freshness remains unset because no authoritative warehouse SLA exists. Intermediate models, marts, generated documentation, and a live Snowflake connection are not implemented yet.
 
 ### Power BI
 
@@ -220,4 +220,4 @@ downstream analytics / future Power BI
 
 Phase 8 owns warehouse presentation logic that is genuinely downstream or consumer-specific. Databricks continues to own source standardization, record validity, conformance, deduplication, Gold facts/dimensions/aggregates, and Delta incrementality. Phase 7 continues to own Snowflake landing, ANALYTICS replacement, audits, reconciliation, and idempotency. dbt must not duplicate those transformations without a documented reason or alter validated upstream data to satisfy a test.
 
-Snowflake database/schema access, role permissions, warehouse usage, and authentication are manual prerequisites if the existing access is insufficient. The eventual dbt target schema and least-privilege role must be selected explicitly; this design does not invent either. `profiles.yml` and sensitive values remain external or ignored, with environment-variable or approved secret-manager resolution. Generated `target/`, logs, downloaded packages, and documentation outputs remain untracked. Only local project initialization and offline parsing are complete; no production dbt model or live Snowflake connection is claimed.
+Snowflake database/schema access, role permissions, warehouse usage, and authentication are manual prerequisites if the existing access is insufficient. The eventual dbt target schema and least-privilege role must be selected explicitly; this design does not invent either. `profiles.yml` and sensitive values remain external or ignored, with environment-variable or approved secret-manager resolution. Generated `target/`, logs, downloaded packages, and documentation outputs remain untracked. Source declarations and local staging implementation parse offline; no intermediate model, mart, or live Snowflake execution is claimed.

@@ -109,7 +109,7 @@ This validated Snowflake contract is the upstream boundary for Phase 8. dbt must
 
 ## Planned Phase 8 dbt milestone
 
-Phase 8 now has a locally initialized dbt Core project and safe externalized profile contract. Production sources, transformations, tests, documentation generation, and a Snowflake connection are not implemented yet.
+Phase 8 now has a locally initialized dbt Core project, safe externalized profile contract, seven ANALYTICS source declarations, and seven conservative staging views with contract-backed tests. Intermediate models, marts, documentation generation, and a Snowflake connection are not implemented yet.
 
 Expected Phase 8 deliverables are:
 

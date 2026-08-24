@@ -75,9 +75,9 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 8. dbt transformations/tests
 
-- **Status:** Current phase; local dbt Core project initialization and offline parsing are complete. No source declarations, production models, dbt tests, generated documentation, or live Snowflake dbt connection exists yet.
+- **Status:** Current phase; project initialization plus the seven ANALYTICS source declarations and seven conservative staging views are implemented and parse locally. Intermediate models, marts, generated documentation, and live Snowflake dbt validation remain unimplemented.
 - **Objective:** Manage warehouse presentation logic, testing, lineage, and documentation as code.
-- **Major tasks:** With the reproducible dbt Core project and Snowflake adapter now initialized, declare the seven `URBANFLOW.ANALYTICS` tables as sources; build thin staging models and justified business-facing marts; add source/model schema, uniqueness, relationship, accepted-value, freshness, and business-rule tests; generate dbt documentation and lineage; and validate results against the committed Phase 7 counts and contracts.
+- **Major tasks:** With the reproducible project, seven ANALYTICS sources, and seven staging views now implemented, build only justified business-facing marts; add downstream schema and business-rule tests; generate dbt documentation and lineage; and validate live results against the committed Phase 7 counts and contracts.
 - **Expected deliverables:** Versioned dbt project configuration, externalized profile contract, source declarations, staging and presentation models, reusable tests, passing local/live dbt commands, generated-but-untracked documentation artifacts, and setup/validation instructions suitable for later CI/CD.
 - **Ownership boundary:** Phase 7 LANDING, ANALYTICS, and AUDIT tables remain governed upstream contracts. dbt reads ANALYTICS and publishes downstream staging/mart relations; it does not replace Databricks Silver/Gold or mutate Phase 7 tables to make tests pass.
 - **Dependencies:** Completed Phase 7 commit `ea0f67f`; Python 3.11+; a compatible constrained `dbt-snowflake` adapter; Snowflake network/account access; and manually approved least-privilege access to the existing database, warehouse, and ANALYTICS sources.

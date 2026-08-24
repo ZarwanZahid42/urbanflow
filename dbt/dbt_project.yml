@@ -12,3 +12,8 @@ packages-install-path: "dbt_packages"
 clean-targets:
   - "target"
   - "dbt_packages"
+
+models:
+  urbanflow:
+    staging:
+      +materialized: view
