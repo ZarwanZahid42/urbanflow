@@ -1,6 +1,6 @@
 # UrbanFlow Technical Design
 
-This document describes implemented and live-validated Phases 2-7. dbt, orchestration, BI, and later phases remain proposals unless explicitly marked implemented.
+This document describes implemented and live-validated Phases 2-7 and the initialized Phase 8 dbt boundary. Production dbt transformations, orchestration, BI, and later phases remain proposals unless explicitly marked implemented.
 
 ## Source data ingestion
 
@@ -75,9 +75,45 @@ Phase 7 uses Databricks Serverless's supported Snowflake Spark connector with `s
 
 The seven Gold tables have explicit Snowflake types matching the Phase 6 contracts. Each run clears only its LANDING table, writes the validated Gold slice/snapshot, and verifies row counts, required keys, duplicate keys, and partition boundaries before ANALYTICS changes. At this transfer boundary, a null `FACT_TRIPS.IS_FINANCIAL_ADJUSTMENT` is normalized to `FALSE` because the Snowflake target is non-nullable; all source columns and non-null flag values remain unchanged. Fact and aggregate plans use `BEGIN`, partition-scoped `DELETE`, `INSERT ... SELECT`, and `COMMIT`; dimensions use the same transaction with deterministic full-snapshot deletion. Exceptions cause rollback. Configuration fails before loading unless LANDING, ANALYTICS, and AUDIT are three distinct schemas, preventing a target replacement from deleting its own landing source. Audits capture run/dataset/period/count/status/timestamps/error/reconciliation/idempotency fields. Reconciliation covers unique fact and dimension keys, both pickup/dropoff date/time/location relationships, source boundaries, and daily/location/hourly totals. The two-pass workflow requires one shared `run_id`, distinct pass numbers, stable counts, and no duplicate keys. Because LANDING tables are shared deterministic objects, the Databricks workflow must enforce a single concurrent Phase 7 run. Final live validation used Databricks job `957309293840081`, run `306537529517430`: all 17 tasks succeeded, both passes were stable, all 40 reconciliation checks passed, and critical integrity failures were zero.
 
-## dbt models
+## Phase 8 dbt design
 
-The dbt project will define sources for loaded Gold/landing tables, thin staging models for warehouse normalization, intermediate models for reusable logic, and marts for Power BI. Materializations will be selected by volume and reuse; large models may be incremental with a tested unique key. Schema YAML will document columns, tests, ownership, and freshness expectations. dbt-generated artifacts will remain untracked.
+Phase 8 now has an initialized dbt Core project for Snowflake under `dbt/`, with a safe environment-variable profile example and no production model, test, generated documentation artifact, or successful Snowflake connection. Its only upstream business-data contract is the seven committed Phase 7 tables in `URBANFLOW.ANALYTICS`: `FACT_TRIPS`, `DIM_DATE`, `DIM_TIME`, `DIM_LOCATION`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS`. LANDING remains a transient transfer boundary and AUDIT remains operational evidence; neither is the default presentation source.
+
+### Initialized project and planned model layering
+
+The initialized repository structure is:
+
+```text
+dbt/
++-- dbt_project.yml
++-- profiles.yml.example
++-- README.md
++-- models/
+|   +-- staging/README.md
+|   +-- intermediate/README.md
+|   +-- marts/README.md
++-- tests/README.md
+```
+
+Source declarations will use `source()` and downstream dependencies will use `ref()` so dbt can build an accurate lineage graph. Staging models will use explicit columns and preserve Phase 7 keys and grains while providing a stable lower-case warehouse interface. They will not repeat cleansing, deduplication, financial-adjustment classification, conformance, or aggregate construction already owned by Databricks. Marts will be added only for a documented analytical question and grain; Power BI-specific presentation remains downstream and future.
+
+Views are the expected default for thin staging models. Mart materializations will be chosen from measured volume and consumer needs during implementation. Any incremental model must declare and test a stable unique key, bound its incremental predicate, and prove retry/backfill idempotency; otherwise a view or full deterministic table build is preferred.
+
+### Planned tests and reconciliation
+
+Source and model YAML will document columns and apply not-null, unique, accepted-value, and relationship tests where the Phase 7 contract makes them valid. Singular tests will cover business rules that generic tests cannot express, including date/time/location relationships, bounded source periods, nonnegative trip counts, and aggregate-to-fact reconciliation. Missing passenger counts and financial-adjustment rows must retain their documented semantics rather than be treated as defects merely to make tests green.
+
+Freshness checks will be configured only where a trustworthy loaded-at timestamp and dataset cadence make the result actionable; snapshot dimensions will not receive arbitrary freshness rules. Initial live dbt validation must reconcile key counts and measures to the Phase 7 evidence, while avoiding permanent hardcoded row counts in production tests as later source periods arrive.
+
+### Planned documentation and lineage
+
+Every source and model will document purpose, grain, keys, important measures, ownership, and upstream contract. `dbt docs generate` will produce the catalog and lineage graph for review. Generated `target/`, logs, downloaded package directories, and rendered documentation will remain untracked unless a later portfolio-delivery decision explicitly selects an artifact.
+
+### Environment, credentials, and permissions
+
+UrbanFlow uses Python 3.11+ and constrains both `dbt-core` and `dbt-snowflake` to the 1.9 release line. The initialized local environment uses dbt Core 1.9.11, dbt-snowflake 1.9.4, and snowflake-connector-python 3.18.1. The 1.9 constraint preserves Phase 7's validated connector `<4` boundary; dbt reports that this release line is deprecated, so a future upgrade must validate connector 4.x compatibility before changing it. The dbt project and profile are both named `urbanflow`. `profiles.yml.example` reads only `DBT_SNOWFLAKE_*`, `DBT_TARGET_SCHEMA`, and `DBT_THREADS`; a populated `profiles.yml` remains external or ignored. Secrets, private keys, passwords, tokens, account identifiers, and connection files containing values will not be committed.
+
+Manual Snowflake work may be required to grant least-privilege database/schema access, ANALYTICS source reads, target-schema writes, and warehouse usage, and to configure approved local or CI authentication. The target schema and dbt execution role are not assumed by this design. Phase 8 will not change Phase 7 tables or grants without explicit authorization. Later Phase 11 CI/CD will reuse the same externalized profile contract rather than introduce repository-held credentials.
 
 ## Data quality
 

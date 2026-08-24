@@ -1,6 +1,6 @@
 # UrbanFlow Implementation Roadmap
 
-**Current phase status (2026-08-24):** Phases 1-6 are complete and committed. Phase 7 is complete and live-validated: all seven Gold datasets load through Databricks Serverless into Snowflake, both idempotency passes are stable, and every final reconciliation gate passes. Phase 7 changes remain unstaged and uncommitted pending review. ADF, dbt, and Power BI remain unimplemented.
+**Current phase status (2026-08-24):** Phases 1-7 are complete and committed. Phase 7 commit `ea0f67f` contains the live-validated Snowflake integration: all seven Gold datasets load through Databricks Serverless, both idempotency passes are stable, and every final reconciliation gate passes. Phase 8 dbt initialization is complete locally; production transformations, tests, documentation generation, and live Snowflake validation remain unimplemented. ADF and Power BI remain unimplemented.
 
 The roadmap is ordered to produce an interview-ready vertical slice quickly while keeping each external change explicit and controlled.
 
@@ -42,7 +42,7 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 5. Databricks Silver transformations
 
-- **Status:** Implemented and live-validated; changes remain uncommitted pending Phase 5 review.
+- **Status:** Complete, live-validated, and committed in `e2b7c49`.
 - **Objective:** Produce typed, standardized, deduplicated, referentially valid trip facts and taxi-zone dimensions without losing rejected source records.
 - **Implemented deliverables:** Four Serverless notebooks; reusable Silver rules, transformations, and audit utilities; Delta fact/dimension/quarantine/audit targets; structured multi-rule rejection; explicit Spark types; reference-driven zone validation; deterministic SHA-256 trip IDs; monthly partition replacement; snapshot replacement for zones; and 13 new PySpark-free tests.
 - **Validation:** Databricks job `713366891015169`, successful run `841707541463751`, processed the full notebook order twice where required. Counts were 4,090,836 Bronze trips = 4,090,836 valid + 0 rejected, and 265 Bronze zones = 265 valid + 0 rejected. Two stable fact audits, zero duplicate valid trip IDs, zero referential failures, correct partitions, schemas, and audit tables were verified.
@@ -53,7 +53,7 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 ## 6. Gold dimensional model
 
-- **Status:** Implemented and live-validated; changes remain unstaged and uncommitted pending review.
+- **Status:** Complete, live-validated, and committed in `999deb6`.
 - **Objective:** Publish a business-ready TLC mobility fact, reusable date/time/location dimensions, and reconciled daily/location/hourly aggregates.
 - **Implemented deliverables:** Seven ordered notebooks; reusable Gold rules, Spark transformations, and audit contracts; seven Delta analytical tables; Gold pipeline and quality audit paths; guarded derived measures; explicit financial-adjustment measures; batch replacement; and 14 new PySpark-free tests.
 - **Validation:** Serverless job `631815480020120`, successful two-pass runs `191548502476871` and `150700319211970`, reconciled 4,090,836 Silver trips to 4,090,836 unique Gold facts. Dimensions contain 6,363 dates, 1,440 minutes, and 265 locations. Aggregates contain 35 daily, 265 location, and 748 hourly rows; daily, pickup, dropoff, and hourly trip counts each reconcile to 4,090,836.
@@ -66,19 +66,23 @@ The roadmap is ordered to produce an interview-ready vertical slice quickly whil
 
 - **Status:** Complete—implemented locally, synchronized to Databricks, and live-validated through two full Snowflake passes.
 - **Objective:** Publish the seven live-validated Gold Delta datasets into governed Snowflake landing, analytical, and audit schemas.
-- **Implemented deliverables:** Explicit ANALYTICS/LANDING/AUDIT DDL; key-pair configuration contract; fail-closed RSA PKCS#8 normalization for the Spark connector; isolated Serverless connector options; nine ordered notebooks; validated landing gates; transactional period replacement for facts/aggregates; deterministic dimension snapshots; count, uniqueness, boundary, referential, and aggregate reconciliation; failure audits; and two-pass idempotency validation.
+- **Implemented deliverables:** Explicit ANALYTICS/LANDING/AUDIT DDL; key-pair configuration contract; fail-closed RSA PKCS#8 normalization for the Spark connector; isolated Serverless connector options; ten ordered notebooks; validated landing gates; transactional period replacement for facts/aggregates; deterministic dimension snapshots; count, uniqueness, boundary, referential, and aggregate reconciliation; failure audits; and two-pass idempotency validation.
 - **Loading boundary:** Data transfer uses Snowflake's internally managed staging through the Spark connector. No Azure storage integration, external ADLS stage, SAS token, storage key, password, service principal, client secret, or new Azure resource is introduced.
 - **Dependencies:** Completed Phase 6; existing `URBANFLOW` objects, loader/reader roles, warehouse, and RSA-configured service user; a Databricks Serverless environment with `snowflake-connector-python`; and the documented secret scope.
 - **Manual cloud work:** Completed for the current scope: Snowflake objects/grants and Databricks-backed scope `urbanflow-snowflake` are configured. The non-sensitive `snowflake_schema` setting was corrected to `ANALYTICS`; the stored private key and all credentials were left unchanged.
 - **Validation:** Databricks job `957309293840081`, run `306537529517430`, completed all 17 tasks. Landing and target counts match for all seven datasets: 4,090,836 facts, 6,363 dates, 1,440 minutes, 265 locations, 35 daily aggregates, 265 location aggregates, and 748 hourly aggregates. Duplicate keys, fact foreign-key failures, source-boundary failures, aggregate-total failures, audit failures, and all 40 reconciliation failures are zero. Both passes produced one stable target count for every dataset; `idempotency_final` passed. The completion gate was satisfied live on 2026-08-24.
+- **Commit:** `ea0f67f feat: complete phase 7 snowflake validation`.
 
 ## 8. dbt transformations/tests
 
+- **Status:** Current phase; local dbt Core project initialization and offline parsing are complete. No source declarations, production models, dbt tests, generated documentation, or live Snowflake dbt connection exists yet.
 - **Objective:** Manage warehouse presentation logic, testing, lineage, and documentation as code.
-- **Major tasks:** Initialize the dbt project; configure environments securely; create staging and mart models; add source, schema, relationship, freshness, and business-rule tests; generate docs.
-- **Expected deliverables:** Versioned dbt project, passing tests, lineage graph, and model documentation.
-- **Dependencies:** Phase 7.
-- **Manual cloud work:** Yes—Snowflake role grants and secure CI credentials; dbt Cloud is optional and only added if explicitly selected.
+- **Major tasks:** With the reproducible dbt Core project and Snowflake adapter now initialized, declare the seven `URBANFLOW.ANALYTICS` tables as sources; build thin staging models and justified business-facing marts; add source/model schema, uniqueness, relationship, accepted-value, freshness, and business-rule tests; generate dbt documentation and lineage; and validate results against the committed Phase 7 counts and contracts.
+- **Expected deliverables:** Versioned dbt project configuration, externalized profile contract, source declarations, staging and presentation models, reusable tests, passing local/live dbt commands, generated-but-untracked documentation artifacts, and setup/validation instructions suitable for later CI/CD.
+- **Ownership boundary:** Phase 7 LANDING, ANALYTICS, and AUDIT tables remain governed upstream contracts. dbt reads ANALYTICS and publishes downstream staging/mart relations; it does not replace Databricks Silver/Gold or mutate Phase 7 tables to make tests pass.
+- **Dependencies:** Completed Phase 7 commit `ea0f67f`; Python 3.11+; a compatible constrained `dbt-snowflake` adapter; Snowflake network/account access; and manually approved least-privilege access to the existing database, warehouse, and ANALYTICS sources.
+- **Validation criteria:** Dependency resolution succeeds; `dbt debug` and parsing/compilation succeed in a configured environment; source and model tests pass; keys and relationships agree with Phase 7; business totals reconcile to the validated upstream contract; reruns are deterministic/idempotent where applicable; docs/lineage generate without committing `target/`, logs, packages, or credentials.
+- **Manual cloud work:** May be required for database/schema access, role grants, warehouse usage, dbt authentication, and secure local/CI environment configuration. No role name, account identifier, or credential is assumed. dbt Cloud remains optional and requires explicit selection.
 
 ## 9. Azure Data Factory orchestration
 

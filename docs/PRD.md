@@ -100,3 +100,26 @@ The implemented local acquisition layer uses three real-data categories:
 - optional daily weather observations from the [NOAA/NCEI Climate Data Online API v2](https://www.ncei.noaa.gov/cdo-web/webservices/v2).
 
 The development default is May 2026, the latest Yellow Taxi month listed when Phase 2 was implemented. Month and taxi type remain configuration-driven to support later incremental ingestion. NOAA live acquisition requires a manually obtained API token; without one, weather is explicitly skipped. Phase 2 stores local Bronze-oriented source files and JSON Lines audit events only. It does not implement cloud landing, Medallion transformations, orchestration, warehouse loading, or analytics.
+
+## Completed Phase 7 warehouse contract
+
+Phase 7 is complete in commit `ea0f67f`. Databricks Serverless job `957309293840081`, successful run `306537529517430`, loaded the seven Phase 6 Gold contracts through `URBANFLOW.LANDING` into governed `URBANFLOW.ANALYTICS` tables and recorded operational evidence in `URBANFLOW.AUDIT`. Both landing passes and final idempotency validation succeeded. The warehouse contains 4,090,836 facts, 6,363 dates, 1,440 minutes, 265 locations, and 35/265/748 daily/location/hourly aggregate rows; duplicate keys, fact relationship failures, partition-boundary failures, aggregate reconciliation failures, audit failures, and all 40 reconciliation failures are zero.
+
+This validated Snowflake contract is the upstream boundary for Phase 8. dbt must consume ANALYTICS without replacing the Databricks Silver/Gold transformations, the Phase 7 loading workflow, or the governed LANDING/ANALYTICS/AUDIT tables.
+
+## Planned Phase 8 dbt milestone
+
+Phase 8 now has a locally initialized dbt Core project and safe externalized profile contract. Production sources, transformations, tests, documentation generation, and a Snowflake connection are not implemented yet.
+
+Expected Phase 8 deliverables are:
+
+- a reproducible dbt Core project using the constrained Snowflake adapter;
+- explicit source declarations for the seven `URBANFLOW.ANALYTICS` relations;
+- thin staging models that standardize warehouse-facing names and contracts without duplicating Databricks logic;
+- justified marts/presentation models with declared grains for downstream analytics and later Power BI use;
+- source/model tests for schema, nullability, uniqueness, relationships, accepted values, freshness where meaningful, and business rules;
+- reconciliation of important model counts and measures to the committed Phase 7 evidence;
+- generated dbt documentation and lineage, with generated artifacts excluded from Git; and
+- secure local setup instructions using environment variables or externally managed credentials rather than tracked secrets or profiles.
+
+Phase 8 succeeds only after the project resolves reproducibly, parses/compiles, connects through an approved least-privilege Snowflake configuration, passes its source/model/business tests, reconciles with the Phase 7 contract, and generates documentation. Database/schema access, role permissions, warehouse usage, authentication, and secure environment configuration may require explicit manual Snowflake work. No credentials or role/account details are invented by this planning step.

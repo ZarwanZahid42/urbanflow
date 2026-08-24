@@ -18,7 +18,7 @@ UrbanFlow follows a Medallion Architecture. Azure is the project's only cloud pl
 
 ## Current status
 
-Phases 6 and 7 are complete and live-validated on Databricks Serverless compute. Phase 7 published all seven Gold contracts to Snowflake with two stable passes, complete reconciliation, and zero critical validation failures. No private key, password, Azure storage credential, or secret is stored in this repository. ADF, dbt, and Power BI remain unimplemented.
+Phases 6 and 7 are complete and live-validated on Databricks Serverless compute. Phase 7 published all seven Gold contracts to Snowflake with two stable passes, complete reconciliation, and zero critical validation failures. Phase 8 dbt Core initialization is complete locally, but production dbt models/tests and live Snowflake validation remain unimplemented. No private key, password, Azure storage credential, or secret is stored in this repository. ADF and Power BI remain unimplemented.
 
 ## Local acquisition
 

@@ -3,4 +3,6 @@ azure-storage-file-datalake>=12.17,<13
 python-dotenv>=1.0,<2
 requests>=2.32,<3
 snowflake-connector-python>=3.16,<4
+dbt-core>=1.9,<1.10
+dbt-snowflake>=1.9.4,<1.10
 pytest>=8,<9

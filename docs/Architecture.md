@@ -3,28 +3,25 @@
 ## Intended data flow
 
 ```text
-Real Data Sources
-        ↓
-Azure Data Factory
-        ↓
-Azure Data Lake Storage Gen2
-        ↓
-Bronze
-        ↓
-Azure Databricks / PySpark
-        ↓
-Silver
-        ↓
-Gold
-        ↓
-Snowflake
-        ↓
-dbt / SQL
-        ↓
-Power BI
+Real TLC data
+      |
+      v
+Azure / ADLS Gen2: immutable sources and Bronze storage
+      |
+      v
+Databricks / Delta: Bronze -> Silver -> Gold
+      |
+      v
+Snowflake: LANDING -> validated ANALYTICS (+ AUDIT evidence)
+      |
+      v
+dbt Core (Phase 8 initialized; models planned): sources -> staging -> marts/presentation
+      |
+      v
+Downstream analytics / Power BI (future)
 ```
 
-The platform uses Medallion Architecture to separate source preservation, validated data, and business-ready analytics. Microsoft Azure is the only cloud platform in scope. **AWS is not part of UrbanFlow's architecture or implementation.**
+Azure Data Factory remains the planned orchestration layer around this flow; it does not own transformation logic. The platform uses Medallion Architecture to separate source preservation, validated data, and business-ready analytics. Microsoft Azure is the only cloud platform in scope. **AWS is not part of UrbanFlow's architecture or implementation.**
 
 ## Component responsibilities
 
@@ -62,7 +59,7 @@ Snowflake is the analytical warehouse serving the seven Phase 6 Gold contracts. 
 
 ### dbt and SQL
 
-dbt will manage warehouse transformations, dimensional presentation models, tests, lineage, and generated documentation. SQL models will remain modular, reviewable, and environment-aware.
+Phase 8 will use dbt Core after `URBANFLOW.ANALYTICS` to manage thin warehouse staging models, justified business marts/presentation models, tests, lineage, and generated documentation. The local `dbt/` project scaffold and environment-only profile example are initialized; source declarations, models, tests, generated documentation, and a live Snowflake connection are not implemented yet. dbt will read the seven governed ANALYTICS relations as explicit sources and publish downstream relations in a separately authorized target schema. It will not read LANDING as the business contract, replace Databricks Silver/Gold, or mutate Phase 7 tables.
 
 ### Power BI
 
@@ -74,6 +71,7 @@ Power BI will consume stable Snowflake models to provide mobility dashboards and
 - Audit metadata will connect source files, pipeline runs, Delta versions, and warehouse loads.
 - CI/CD will validate repository changes and later deploy environment-specific artifacts safely.
 - Storage, compute, and orchestration will be designed for bounded cost and repeatable teardown where appropriate.
+- dbt authentication will use environment variables or externally managed credentials; populated profiles, private keys, tokens, account identifiers, and generated dbt artifacts will not be committed.
 
 ## Phase 2 local acquisition boundary
 
@@ -202,3 +200,24 @@ URBANFLOW.ANALYTICS
 The connector uses Snowflake's internally managed transfer stage; UrbanFlow creates no external stage, Azure storage integration, SAS token, storage key, service principal, or additional Azure resource. `FACT_TRIPS`, `AGG_DAILY_TRIPS`, `AGG_LOCATION_TRIPS`, and `AGG_HOURLY_TRIPS` replace only a configured source period. `DIM_DATE`, `DIM_TIME`, and `DIM_LOCATION` replace complete validated snapshots. LANDING can contain an incomplete failed transfer, but ANALYTICS remains unchanged unless validation passes and the transaction commits.
 
 The existing service user `URBANFLOW_DATABRICKS_SVC` authenticates with its configured RSA public key. The matching private key remains outside Git and is retrieved at runtime only through configurable secret references under the documented `urbanflow-snowflake` scope. Runtime validation also requires LANDING, ANALYTICS, and AUDIT to be distinct schemas. Databricks job `957309293840081`, run `306537529517430`, completed both passes and final idempotency validation: all seven landing and target counts matched, all 40 reconciliation checks passed, and critical integrity failures were zero.
+
+## Initialized Phase 8 dbt boundary
+
+```text
+URBANFLOW.ANALYTICS (Phase 7 governed source contract)
+        |
+        | dbt source() declarations; read-only upstream access
+        v
+staging models (thin renaming, typing assertions, reusable source interface)
+        |
+        | ref() dependencies
+        v
+marts/presentation (declared business grain and consumer purpose)
+        |
+        v
+downstream analytics / future Power BI
+```
+
+Phase 8 owns warehouse presentation logic that is genuinely downstream or consumer-specific. Databricks continues to own source standardization, record validity, conformance, deduplication, Gold facts/dimensions/aggregates, and Delta incrementality. Phase 7 continues to own Snowflake landing, ANALYTICS replacement, audits, reconciliation, and idempotency. dbt must not duplicate those transformations without a documented reason or alter validated upstream data to satisfy a test.
+
+Snowflake database/schema access, role permissions, warehouse usage, and authentication are manual prerequisites if the existing access is insufficient. The eventual dbt target schema and least-privilege role must be selected explicitly; this design does not invent either. `profiles.yml` and sensitive values remain external or ignored, with environment-variable or approved secret-manager resolution. Generated `target/`, logs, downloaded packages, and documentation outputs remain untracked. Only local project initialization and offline parsing are complete; no production dbt model or live Snowflake connection is claimed.

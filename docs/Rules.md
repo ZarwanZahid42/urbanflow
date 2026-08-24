@@ -74,6 +74,19 @@
 - Test critical dbt constraints and business relationships.
 - Include regression tests for every corrected defect where practical.
 
+## dbt engineering (Phase 8)
+
+- Treat the committed Phase 7 `URBANFLOW.ANALYTICS` tables as immutable upstream source contracts for dbt.
+- Declare upstream relations with explicit `source()` definitions and express model dependencies with `ref()`; do not bypass lineage with hardcoded relation names in model SQL.
+- Keep dbt credentials, private keys, passwords, tokens, account identifiers, and populated connection profiles out of Git. `profiles.yml` must remain external or ignored and read sensitive values from environment variables or an approved secret manager.
+- Never place secrets in `dbt_project.yml`, schema YAML, model SQL, macros, tests, logs, generated documentation, or tracked example configuration.
+- Do not mutate Phase 7 LANDING, ANALYTICS, or AUDIT tables, weaken their contracts, or rewrite validated source data merely to make a dbt test pass.
+- Keep staging models thin and deterministic. Do not duplicate transformations already correctly owned by Databricks Silver/Gold without a documented analytical or warehouse-specific reason.
+- Build marts only for a declared business grain and consumer need; use explicit columns, stable keys, and idempotent materializations. Incremental models require a documented unique key and bounded retry/backfill behavior.
+- Test source and model nullability, uniqueness, accepted values, relationships, freshness where meaningful, and documented business rules. Reconcile important measures with the Phase 7 upstream evidence.
+- Generate and review dbt lineage/documentation, but do not commit generated `target/`, `logs/`, package directories, or local profile artifacts.
+- Snowflake grants, warehouse usage, authentication, environment setup, and any cloud changes require explicit manual acknowledgement and least privilege.
+
 ## Documentation
 
 - Keep architecture, setup, operational steps, schemas, and decisions aligned with implementation.
